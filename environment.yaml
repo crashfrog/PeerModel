@@ -1,0 +1,7 @@
+name: peermodel
+channels:
+ - bioconda
+ - conda-forge
+dependencies:
+ - ca-certificates=2022.9.24
+ # TODO

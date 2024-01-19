@@ -1,0 +1,46 @@
+name: Test peermodel
+
+on:
+  push:
+    branches: [ master, main, dev ]
+  pull_request:
+    branches: [ master, main, dev ]
+    
+jobs:
+  shigatyper:
+    runs-on: $\{\{ matrix.os \}\}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    defaults:
+      run:
+        shell: bash -l {0}
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v2
+
+      - name: Setup miniconda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          activate-environment: peermodel
+          auto-activate-base: false
+
+      - name: Setup Environment for peermodel
+        run: |
+          conda env create -f environment.yml
+          conda activate peermodel
+
+      - name: Environment Information
+        run: uname -a && env
+
+      - name: Run Test Suite
+        run: |
+          pytest
+      - name: Test Usage and Version
+        run: |
+          prmdl --help
+          prmdl --version
+
+      - name: Test Actual Run
+        run: |
+          prmdl # TODO

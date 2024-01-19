@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools_scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "peermodel"
+authors = [
+    {name = "Justin Payne", email = "justin.payne@fda.hhs.gov"},
+]
+description = "A secure capabilities peer-to-peer ORM built on OrbitDB."
+readme = {file = "README.md", content-type="text/markdown"}
+requires-python = ">=3.7"
+keywords = ["peermodel"]
+classifiers = [
+        'Natural Language :: English',
+        'Programming Language :: Python :: 3.7',
+]
+dependencies = ["Click ~= 8.1.3"
+]
+dynamic = ["version"]
+
+
+[project.scripts]
+    prmdl = 'peermodel.cli:cli'
+
+[project.urls]
+Homepage = 'https://github.com/crashfrog/peermodel'
+Issues = 'https://github.com/crashfrog/peermodel/issues'
+
+[project.optional-dependencies]
+test = ['pytest',
+    'pytest-runner',
+    ]
+dev = [
+    'configparser',
+    'pytest',
+    'hypothesis',
+    'black',
+    'flake8',
+    'sphinx',
+    'tox',
+    'twine',
+    'coverage',
+    'zest.releaser',
+]
+
+[tool.setuptools.packages]
+find = {}
+
+[tool.setuptools_scm]
