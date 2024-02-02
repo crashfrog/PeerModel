@@ -1,0 +1,1 @@
+# Cookiecutter Template for PeerModel database definitions

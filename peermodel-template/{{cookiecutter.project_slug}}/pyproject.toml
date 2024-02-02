@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools_scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "{{ cookiecutter.project_slug }}"
+authors = [
+    {name = "{{cookiecutter.full_name}}", email = "{{cookiecutter.email}}"},
+]
+description = "{{ cookiecutter.project_short_description }}"
+readme = {file = "README.md", content-type="text/markdown"}
+requires-python = ">=3.7"
+keywords = ["{{ cookiecutter.project_slug }}"]
+classifiers = [
+        'Natural Language :: English',
+        'Programming Language :: Python :: 3.7',
+]
+dependencies = [
+    "peermodel"
+]
+dynamic = ["version"]
+
+[project.scripts]
+    {{ cookiecutter.project_shell_cmd }} = "{{ cookiecutter.pkg_name }}.cli"
+
+[project.urls]
+Homepage = 'https://github.com/{{ cookiecutter.github_username }}/{{ cookiecutter.project_slug }}'
+Issues = 'https://github.com/{{ cookiecutter.github_username }}/{{ cookiecutter.project_slug }}/issues'
+
+[project.optional-dependencies]
+dev = [
+    'configparser',
+    'pytest',
+    'hypothesis',
+    'black',
+    'flake8',
+    'sphinx',
+    'tox',
+    'twine',
+    'coverage',
+    'zest.releaser',
+]
+
+[tool.setuptools.packages]
+find = {}
+
+[tool.setuptools_scm]

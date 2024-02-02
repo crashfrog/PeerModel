@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@orbitdb/core": "^2.0.1",
+    "helia": "^4.0.0"
+  }
+}

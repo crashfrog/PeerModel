@@ -1,0 +1,16 @@
+{
+    "full_name": "",
+    "email": "",
+    "github_username": "",
+    "project_name": "",
+    "pkg_name": "{{ cookiecutter.project_name|lower|replace(' ', '')|replace('-', '') }}db",
+    "project_short_description": "The database and datamodel for {{ project_name }}, using PeerModel.",
+    "project_slug": "{{ cookiecutter.project_name|replace(' ', '-')}}-peermodel",
+    "project_shell_cmd": "{{ cookiecutter.pkg_name|reject('in','aeiou')|join('') }}",
+    "pypi_username": "{{ cookiecutter.github_username }}",
+    "version": "0.1.0",
+    "use_pytest": "y",
+    "add_pyup_badge": "y",
+    "create_author_file": "y",
+    "open_source_license": ["MIT license", "GNU General Public License v3", "Public domain", "US Government Work Product", "BSD license", "ISC license", "Apache Software License 2.0",  "Not open source"]
+  }
