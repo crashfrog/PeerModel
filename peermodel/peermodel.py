@@ -1,4 +1,5 @@
-from contextlib import AbstractContextManager, AbstractAsyncContextManager
+from contextlib import AbstractContextManager, AbstractAsyncContextManager, wraps
+from functools import wraps
 import js2py
 
 
@@ -71,9 +72,105 @@ class PeerFile:
     "Special value for file references"
     
     hash: str
+    _url: str
+
+    class Content:
+        "Content file-like object"
+        pass
+
+    @property
+    def content(self):
+        "Return a file-like object"
+        return self.Content(self)
     
-    
+    @content.setter
+    def _write_file(self, bytestream, identity=None):
+        "Write bytes if your identity permits it"
+        pass
 
 
 class Peer2PeerDatabase(AbstractAsyncContextManager, AbstractContextManager):
-    pass
+     class Site:
+          
+          def create(self):
+              pass
+          
+          def invite(self):
+              pass
+          
+          def review(self):
+              pass
+          
+          def approve(self):
+              pass
+          
+          def revoke(self):
+              pass
+          
+          def regenerate(self):
+              pass
+          
+     
+     class Guests:
+         
+        def invite(self):
+            pass
+
+        def review(self):
+            pass
+
+        def approve(self):
+            pass
+
+        def revoke(self):
+            pass
+
+     
+     class Peer:
+         pass
+     
+     def __init__(self):
+         self.site = self.Site()
+         self.guests = self.Guests()
+         self.peer = self.Peer()
+     
+     def initialize_identity(self):
+         pass
+     
+     def list(self):
+         pass
+     
+     def create(self):
+         pass
+     
+     def retrieve(self):
+         pass
+     
+     def update(self):
+         pass
+     
+     def delete(self):
+         pass
+     
+     def undelete(self):
+         pass
+     
+     def tag(self):
+         pass
+     
+     def untag(self):
+         pass
+     
+     def publish(self):
+         pass
+
+
+def with_database(func=None):
+    "Context decorator"
+    if func:
+        @wraps(func)
+        def database_wrapper(*args, **kwargs):
+            with Peer2PeerDatabase() as db:
+                return func(db)
+        return database_wrapper
+    return with_database

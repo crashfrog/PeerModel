@@ -1,4 +1,5 @@
 import click
+from peermodel import with_database
 
 import logging
 
@@ -27,9 +28,10 @@ def build_cli(
                             datefmt='%m-%d %H:%M')
         
     @cli.command()
-    def init():
+    @with_database
+    def init(db, ):
         "Initialize your identity"
-        pass
+        db.initialize_identity()
         
     @cli.group()
     def site():
@@ -38,38 +40,43 @@ def build_cli(
 
     @site.command("create")
     @click.option("-g", "--site-group", "site_group_name")
-    @click.option("-a", "--application", "app")
-    def site_init(site_group_name=None, app=None):
+    @with_database
+    def site_init(db, site_group_name=None):
         "Initalize keys for a new site group for an existing application"
-        pass
+        db.site.initialize(site_group_name)
 
     @site.command("invite")
     @click.option("-g", "--site-group", "site_group_name")
-    def site_invite(site_group_name=None):
+    @with_database
+    def site_invite(db, site_group_name=None):
         "Invite new user into the site group"
         pass
 
     @site.command("review")
     @click.option("-g", "--site-group", "site_group_name")
-    def site_requests(site_group_name=None):
+    @with_database
+    def site_requests(db, site_group_name=None):
         "Review existing access requests"
         pass
 
     @site.command("approve")
     @click.option("-g", "--site-group", "site_group_name")
-    def site_approve(site_group_name=None):
+    @with_database
+    def site_approve(db, site_group_name=None):
         "Approve request"
         pass
 
     @site.command("revoke")
     @click.option("-g", "--site-group", "site_group_name")
-    def site_revoke(site_group_name=None):
+    @with_database
+    def site_revoke(db, site_group_name=None):
         "Revoke site group access and regenerate site keys"
         pass
 
     @site.command("regenerate")
     @click.option("-g", "--site-group", "site_group_name")
-    def site_regenerate(site_group_name=None):
+    @with_database
+    def site_regenerate(db, site_group_name=None):
         "Regenerate site keys"
         pass
 
@@ -80,48 +87,49 @@ def build_cli(
         pass
 
     @guest.command("invite")
-    def site_invite():
+    @with_database
+    def guest_invite(db, ):
         "Invite new user into the guest group"
         pass
 
     @guest.command("review")
-    def site_requests():
+    @with_database
+    def guest_requests(db, ):
         "Review existing access requests"
         pass
 
     @guest.command("approve")
-    def site_approve():
+    @with_database
+    def guest_approve(db, ):
         "Approve request"
         pass
 
     @guest.command("revoke")
-    def site_revoke():
-        "Revoke site group access and regenerate site keys"
+    @with_database
+    def guest_revoke(db, ):
+        "Revoke guest access and regenerate site keys"
         pass
-
-    @guest.command("regenerate")
-    def site_regenerate():
-        "Regenerate site keys"
-        pass
-
 
 
     @cli.command("list")
-    def show():
+    @with_database
+    def show(db):
         "List records accessible through your credentials"
         pass
 
     @cli.command()
     @click.argument("content")
     @click.option("-g", "--site-group", "site_group_name")
-    def create(content, site_group_name=None):
+    @with_database
+    def create(db, content, site_group_name=None):
         "Create a record"
         pass
 
     @cli.command()
     @click.argument("id")
     @click.option("-g", "--site-group", "site_group_name")
-    def retrieve(id, site_group_name=None):
+    @with_database
+    def retrieve(db, id, site_group_name=None):
         "Retrieve record by ID"
         pass
 
@@ -129,21 +137,24 @@ def build_cli(
     @click.argument("id")
     @click.argument("content")
     @click.option("-g", "--site-group", "site_group_name")
-    def update(id, content, site_group_name=None):
+    @with_database
+    def update(db, id, content, site_group_name=None):
         "Update a record"
         pass
 
     @cli.command()
     @click.argument("id")
     @click.option("-g", "--site-group", "site_group_name")
-    def delete(id, site_group_name=None):
+    @with_database
+    def delete(db, id, site_group_name=None):
         "Mark a record as retracted"
         pass
 
     @cli.command()
     @click.argument("id")
     @click.option("-g", "--site-group", "site_group_name")
-    def undelete(id, site_group_name=None):
+    @with_database
+    def undelete(db, id, site_group_name=None):
         "Mark a record as unretracted"
         pass
 
@@ -151,20 +162,23 @@ def build_cli(
     @click.argument("id")
     @click.argument("tag")
     @click.option("-g", "--site-group", "site_group_name")
-    def tag(id, tag=""):
+    @with_database
+    def tag(db, id, tag=""):
         "Add a public tag to a record"
         pass
 
     @cli.command()
     @click.argument("id")
     @click.argument("tag")
-    def untag(id, tag=""):
+    @with_database
+    def untag(db, id, tag=""):
         "Remove a public tag from a record"
         pass
 
     @cli.command()
     @click.argument("id")
-    def publish(id):
+    @with_database
+    def publish(db, id):
         "Enable anonymous, unauthenticated view of a record"
         pass
 
