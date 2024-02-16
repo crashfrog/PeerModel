@@ -117,6 +117,12 @@ def build_cli(
         "List records accessible through your credentials"
         pass
 
+    @cli.command("index")
+    @with_database
+    def index(db):
+        "Build or re-build the searchable records index"
+        pass
+
     @cli.command()
     @click.argument("content")
     @click.option("-g", "--site-group", "site_group_name")
