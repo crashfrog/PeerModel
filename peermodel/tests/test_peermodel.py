@@ -7,7 +7,6 @@ from unittest import skip
 
 import peermodel
 
-@skip
 def test_whether_js_2_py_even_works():
     import js2py
     import uuid
@@ -33,7 +32,7 @@ def test_whether_js_2_py_even_works():
 @pytest.fixture
 def memdb():
     with peermodel.InMemoryDocumentDatabase() as db:
-        return db
+        yield db
     
 @pytest.fixture
 def doc():
@@ -158,6 +157,5 @@ def test_pretty_print_nested_record(aggdoc):
 def perdb():
     return peermodel.PersistedCapabilitiesDatabase()
 
-def test_peer_subclassing_works_the_way_I_expect(perdb):
-    assert type(perdb.peer) == peermodel.PersistedCapabilitiesDatabase.Peer
+
 

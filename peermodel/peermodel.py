@@ -6,7 +6,7 @@ from dataclasses import dataclass, InitVar, field, fields, KW_ONLY
 import uuid
 import js2py
 
-from peermodel.capabilities import Site, Guests, Peer
+from peermodel.capabilities import Site, Guests
 
 
 "Main peermodel module."
@@ -184,13 +184,11 @@ class AbstractTypedDocumentDatabase(AbstractContextManager):
 
     Site = Site
     Guests = Guests
-    Peer = Peer
 
      
     def __init__(self):
         self.site = self.Site()
         self.guests = self.Guests()
-        self.peer = self.Peer()
 
 
     def _persist_record(self, record) -> bool:
@@ -248,9 +246,10 @@ class AbstractTypedDocumentDatabase(AbstractContextManager):
 class InMemoryDocumentDatabase(AbstractTypedDocumentDatabase):
     "Basic API implementation. No access control, no persistence"
 
-    def __init__(self):
+    def __enter__(self):
         super().__init__()
         self._records = defaultdict(dict)
+        return self
 
     def __exit__(self, *args, **kwargs):
         self._records = defaultdict(dict)
@@ -272,9 +271,7 @@ class InMemoryDocumentDatabase(AbstractTypedDocumentDatabase):
 
 
 class InMemoryCapabilitiesDatabase(InMemoryDocumentDatabase):
-
-    def __init__(self):
-        super().__init__()
+    "Encrypted records implementation"
 
     def _persist_record(self, record):
         pass
@@ -284,18 +281,16 @@ class InMemoryCapabilitiesDatabase(InMemoryDocumentDatabase):
 
 
 class PersistedCapabilitiesDatabase(InMemoryCapabilitiesDatabase):
+    "Persists records using OrbitDB via Js2py"
 
-    class Peer(AbstractTypedDocumentDatabase.Peer):
+    def __enter__(self):
+
+        return self
+    
+    def __exit__(self):
+
         pass
 
-    def __init__(self):
-        super().__init__()
-
-    def _persist_record(self, record):
-        pass
-
-    def _retrieve_record(self, record_id):
-        pass
     
 
 

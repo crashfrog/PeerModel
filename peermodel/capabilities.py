@@ -34,7 +34,3 @@ class Guests(ABC):
 
     def revoke(self):
         pass
-
-
-class Peer(ABC):
-    pass

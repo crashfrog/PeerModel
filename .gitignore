@@ -106,3 +106,6 @@ ENV/
 
 # IDE settings
 .vscode/
+
+# Node
+node_modules
