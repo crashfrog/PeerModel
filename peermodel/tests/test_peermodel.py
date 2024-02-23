@@ -7,26 +7,44 @@ from unittest import skip
 
 import peermodel
 
-def test_whether_js_2_py_even_works():
-    import js2py
-    import uuid
-    from pathlib import Path
+# @skip
+# def test_pymonkey():
+#     import pythonmonkey
+#     assert pythonmonkey.require('crypto-js')
 
-    libp2p = js2py.require('libp2p')
-    ipfs = js2py.require('helia')
-    orbitdb = js2py.require('@orbitdb/core')
-    netconfig = js2py.require("./config/libp2p.js")
 
-    libp2p = libp2p.createLibp2p(netconfig)
-    ipfs = ipfs.createHelia(libp2p)
+# def test_whether_pythonmonkey_even_works():
+#     import pythonmonkey as pm
+#     assert pm.require('helia/dist/src')
+#     assert pm.require('@orbitdb/core')
 
-    randDir = Path('./') / uuid.uuid4() / "orbitdb"
-    orbdb = orbitdb.createOrbitDB(ipfs, directory=str(randDir))
-    db = orbdb.open('my-db', dict(AccessController=orbitdb.IPFSAccessController(dict(write=['*']))))
+# def test_whether_js2py_works():
+#     import js2py as js
+#     js.require('crypto-js')
+#     js.require('helia')
 
-    assert db.address
+# @skip
+# def test_peer_to_peer_functions():
+#     import pythonmonkey as js
+#     import uuid
+#     from pathlib import Path
 
-    db.add("Hello world")
+#     crypt = js.require('crypto-js')
+#     libp2p = js.require('libp2p')
+#     ipfs = js.require('helia')
+#     orbitdb = js.require('@orbitdb/core')
+#     netconfig = js.require("./config/libp2p.js")
+
+#     # libp2p = libp2p.createLibp2p(netconfig)
+#     # ipfs = ipfs.createHelia(libp2p)
+
+#     # randDir = Path('./') / uuid.uuid4() / "orbitdb"
+#     # orbdb = orbitdb.createOrbitDB(ipfs, directory=str(randDir))
+#     # db = orbdb.open('my-db', dict(AccessController=orbitdb.IPFSAccessController(dict(write=['*']))))
+
+#     # assert db.address
+
+#     # db.add("Hello world")
 
 
 @pytest.fixture

@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
+# from typing import dataclass_transform
 from contextlib import AbstractContextManager, AbstractAsyncContextManager, wraps
 from functools import wraps
 from collections import defaultdict
 from dataclasses import dataclass, InitVar, field, fields, KW_ONLY
 import uuid
-import js2py
 
 from peermodel.capabilities import Site, Guests
 
@@ -129,7 +129,7 @@ class DocumentObj:
         return obj
 
 
-
+# @dataclass_transform()
 def peermodel(model):
     "PeerModel class decorator"
 
@@ -138,7 +138,7 @@ def peermodel(model):
                 {}))
     
 
-
+# @dataclass_transform()
 def peerevent(model=None):
     "PeerModel event decorator"
     pass
