@@ -5,7 +5,11 @@
 import pytest
 from unittest import skip
 
+from hypothesis import given
+from hypothesis.strategies import text
+
 import peermodel
+import peermodel.capabilities
 
 # @skip
 # def test_pymonkey():
@@ -46,15 +50,19 @@ import peermodel
 
 #     # db.add("Hello world")
 
+@pytest.fixture
+def peer():
+    return peermodel.App("test model")
 
 @pytest.fixture
 def memdb():
     with peermodel.InMemoryDocumentDatabase() as db:
         yield db
-    
+
+
 @pytest.fixture
-def doc():
-    @peermodel.peermodel
+def doc(peer):
+    @peer.model
     class TestDocument:
         test: str = ""
 
@@ -63,8 +71,6 @@ def doc():
 @pytest.fixture
 def pickled_doc(memdb, doc):
     return doc._to_storage(memdb)
-
-
 
 def test_record_id(doc):
     assert hasattr(doc, "_id")
@@ -82,12 +88,11 @@ def test_doctype(doc):
 def test_type_registry(doc):
     assert doc.__class__.__name__ in peermodel.DocumentObj.Meta._reg
 
-def test_prepare_for_serialization(memdb, doc, pickled_doc):
+def test_prepare_for_serialization(doc, pickled_doc):
     assert pickled_doc == ('TestDocument',
                           doc._id,
                           {"test":""})
 
-    
 def test_mem_write(memdb, doc):
     assert memdb._persist_record(doc)
 
@@ -101,12 +106,12 @@ def test_mem_writeread(memdb, doc):
 
 
 @pytest.fixture
-def complexdoc():
-    @peermodel.peermodel
+def complexdoc(peer):
+    @peer.model
     class InnerDocument:
         pass
 
-    @peermodel.peermodel
+    @peer.model
     class ComplexDocument:
         inner: InnerDocument
         testval: str = ""
@@ -138,13 +143,13 @@ def test_mem_writeread_complex(memdb, complexdoc):
     assert memdb._retrieve_record(type(complexdoc), complexdoc._id) == complexdoc
 
 @pytest.fixture
-def aggdoc():
-    @peermodel.aggregated
-    @peermodel.peermodel
+def aggdoc(peer):
+    @peer.aggregated
+    @peer.model
     class InnerAggregateDocument:
         pass
 
-    @peermodel.peermodel
+    @peer.model
     class AggregateDocument:
         inner: InnerAggregateDocument
         
@@ -157,6 +162,52 @@ def test_mem_write_aggregated(memdb, aggdoc):
 def test_mem_writeread_aggregated(memdb, aggdoc):
     memdb._persist_record(aggdoc)
     assert memdb._retrieve_record(type(aggdoc), aggdoc._id) == aggdoc
+
+
+@pytest.fixture
+def secdb(tmp_path):
+
+    from peermodel.capabilities import IdentityManager
+
+    class TestIdentityManager(IdentityManager):
+
+        home = tmp_path / "id_tmp"
+
+        @classmethod
+        def ready(cls):
+            return True
+
+    with peermodel.InMemoryCapabilitiesDatabase(identity_manager=TestIdentityManager) as db:
+        yield db
+
+def test_secure_write_is_secure(secdb, doc, pickled_doc):
+    "Test should fail if the document content is recognizably in storage"
+    secdb._persist_record(doc)
+    assert pickled_doc[2] != secdb._records["TestDocument"][doc._id]
+
+def test_secure_mem_write(secdb, doc):
+    assert secdb._persist_record(doc)
+
+def test_secure_mem_read(secdb, doc):
+    with pytest.raises(KeyError):
+        assert secdb._retrieve_record(type(doc), doc._id)
+
+def test_secure_mem_writeread(secdb, doc):
+    secdb._persist_record(doc)
+    assert secdb._retrieve_record(type(doc), doc._id) == doc
+
+
+def test_secure_mem_write_complex(secdb, complexdoc):
+    assert secdb._persist_record(complexdoc)
+    # raise Exception(memdb)
+
+def test_secure_mem_writeread_complex(secdb, complexdoc):
+    secdb._persist_record(complexdoc)
+    assert secdb._retrieve_record(type(complexdoc), complexdoc._id) == complexdoc
+
+
+
+
 
 def test_pretty_print_nested_record(aggdoc):
     assert "\n".join(aggdoc.pretty_print()) == f"""(AggregateDocument,

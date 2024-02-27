@@ -14,9 +14,68 @@ import logging
 ## @click.option("--br", is_flag=True, show_default=True, default=True, help="Add a thematic break")
 ## @click.option('--shout/--no-shout', default=False)
 
+
+@click.group()
+def cli():
+    "Management interface for PeerModel identity and site groups."
+    pass
+
+@cli.command()
+def init():
+    "Initialize your identity"
+    pass
+
+
+@cli.group()
+def site():
+    "Commands for managing site groups"
+    pass
+
+@site.command("create")
+@click.option("-g", "--site-group", "site_group_name")
+def site_init(db, site_group_name=None):
+    "Initalize keys for a new site group for an existing application"
+    db.site.initialize(site_group_name)
+
+@site.command("invite")
+@click.option("-g", "--site-group", "site_group_name")
+def site_invite(db, site_group_name=None):
+    "Invite new user into the site group"
+    pass
+
+@site.command("review")
+@click.option("-g", "--site-group", "site_group_name")
+def site_requests(db, site_group_name=None):
+    "Review existing access requests"
+    pass
+
+@site.command("approve")
+@click.option("-g", "--site-group", "site_group_name")
+def site_approve(db, site_group_name=None):
+    "Approve request"
+    pass
+
+@site.command("revoke")
+@click.option("-g", "--site-group", "site_group_name")
+@with_database
+def site_revoke(db, site_group_name=None):
+    "Revoke site group access and regenerate site keys"
+    pass
+
+@site.command("regenerate")
+@click.option("-g", "--site-group", "site_group_name")
+@with_database
+def site_regenerate(db, site_group_name=None):
+    "Regenerate site keys"
+    pass
+
+
+
+
 def build_cli(
         app_name="my app",
 ):
+    "CLI Builder for applications using PeerModel"
 
     @click.group(help=f"Management interface for the {app_name} database, using PeerModel.")
     @click.version_option(package_name="peermodel", message="%(prog)s %(version)s")
@@ -27,63 +86,12 @@ def build_cli(
                             format='[%(asctime)s][%(name)-12s][%(levelname)-8s] %(message)s',
                             datefmt='%m-%d %H:%M')
         
-    @cli.command()
-    @with_database
-    def init(db, ):
-        "Initialize your identity"
-        db.initialize_identity()
-        
-    @cli.group()
-    def site():
-        "Commands for managing site groups"
-        pass
 
-    @site.command("create")
-    @click.option("-g", "--site-group", "site_group_name")
-    @with_database
-    def site_init(db, site_group_name=None):
-        "Initalize keys for a new site group for an existing application"
-        db.site.initialize(site_group_name)
-
-    @site.command("invite")
-    @click.option("-g", "--site-group", "site_group_name")
-    @with_database
-    def site_invite(db, site_group_name=None):
-        "Invite new user into the site group"
-        pass
-
-    @site.command("review")
-    @click.option("-g", "--site-group", "site_group_name")
-    @with_database
-    def site_requests(db, site_group_name=None):
-        "Review existing access requests"
-        pass
-
-    @site.command("approve")
-    @click.option("-g", "--site-group", "site_group_name")
-    @with_database
-    def site_approve(db, site_group_name=None):
-        "Approve request"
-        pass
-
-    @site.command("revoke")
-    @click.option("-g", "--site-group", "site_group_name")
-    @with_database
-    def site_revoke(db, site_group_name=None):
-        "Revoke site group access and regenerate site keys"
-        pass
-
-    @site.command("regenerate")
-    @click.option("-g", "--site-group", "site_group_name")
-    @with_database
-    def site_regenerate(db, site_group_name=None):
-        "Regenerate site keys"
-        pass
 
     @site.group()
     @click.option("-g", "--site-group", "site_group_name")
     def guest():
-        "Commands for managing site guests, invited read-only users"
+        "Commands for managing site guests, invited read-only users of an app"
         pass
 
     @guest.command("invite")
@@ -190,8 +198,24 @@ def build_cli(
 
 
     @cli.group()
-    def peer():
-        "Commands to manage the local OrbitDB peer"
+    def start():
+        "Commands to manage the peer service"
+        pass
+
+    @start.command()
+    def events():
+        "Start the event listener service."
+        pass
+
+
+    @cli.group()
+    def stop():
+        "Commands to manage the peer service"
+        pass
+
+    @stop.command()
+    def events():
+        "Stop the event listener service."
         pass
 
 
@@ -200,5 +224,7 @@ def build_cli(
 
 
 
+
+
 if __name__ == '__main__':
-    build_cli()()
+    cli()

@@ -1,0 +1,1 @@
+from peermodel.capabilities import IdentityManager

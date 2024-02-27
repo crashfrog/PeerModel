@@ -5,8 +5,9 @@ from functools import wraps
 from collections import defaultdict
 from dataclasses import dataclass, InitVar, field, fields, KW_ONLY
 import uuid
+import json
 
-from peermodel.capabilities import Site, Guests
+from peermodel.capabilities import Site, Guests, IdentityManager
 
 
 "Main peermodel module."
@@ -129,71 +130,22 @@ class DocumentObj:
         return obj
 
 
-# @dataclass_transform()
-def peermodel(model):
-    "PeerModel class decorator"
-
-    return dataclass(slots=True)(type(model.__name__, 
-                (dataclass(kw_only=True)(model), DocumentObj), 
-                {}))
-    
-
-# @dataclass_transform()
-def peerevent(model=None):
-    "PeerModel event decorator"
-    pass
-    
-def aggregated(model):
-    "Declare this portion of the document is aggregated and held by reference"
-    model._is_aggregate = True
-    Aggregate(model)
-    return model
-
-
-def indexed(model):
-    "Declare that the document is indexed by this field"
-    model._is_indexed = True
-    Index(model)
-    return model
-    
-
-@peermodel
-@aggregated
-class PeerFile:
-    "Special value for file references"
-    
-    _url: str
-    hash: str = ""
-
-    class Content:
-        "Content file-like object"
-        pass
-
-    @property
-    def content(self):
-        "Return a file-like object"
-        return self.Content(self)
-    
-    @content.setter
-    def _write_file(self, bytestream, identity=None):
-        "Write bytes if your identity permits it"
-        pass
-
-
 class AbstractTypedDocumentDatabase(AbstractContextManager):
 
     Site = Site
     Guests = Guests
 
      
-    def __init__(self):
+    def __init__(self, app_name=None):
         self.site = self.Site()
         self.guests = self.Guests()
+        self.app_name = app_name
 
-
+    @abstractmethod
     def _persist_record(self, record) -> bool:
         return False
 
+    @abstractmethod
     def _retrieve_record(self, record_type, record_id) -> DocumentObj:
         return None
 
@@ -209,9 +161,6 @@ class AbstractTypedDocumentDatabase(AbstractContextManager):
         "If value is aggregable, return a reference to it"
         self._persist_record(record)
         return "Ref", type(record).__name__, record._id
-     
-    def initialize_identity(self):
-        pass
 
     def list(self):
         pass
@@ -247,7 +196,6 @@ class InMemoryDocumentDatabase(AbstractTypedDocumentDatabase):
     "Basic API implementation. No access control, no persistence"
 
     def __enter__(self):
-        super().__init__()
         self._records = defaultdict(dict)
         return self
 
@@ -273,26 +221,76 @@ class InMemoryDocumentDatabase(AbstractTypedDocumentDatabase):
 class InMemoryCapabilitiesDatabase(InMemoryDocumentDatabase):
     "Encrypted records implementation"
 
-    def _persist_record(self, record):
-        pass
-
-    def _retrieve_record(self, record_id):
-        pass
+    def __init__(self, identity_manager, encoding='UTF-8', *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.identity = identity_manager()
+        self.encoding = encoding
 
 
 class PersistedCapabilitiesDatabase(InMemoryCapabilitiesDatabase):
-    "Persists records using OrbitDB via Js2py"
+    "Persists records using IPFS / IPLD"
+        
+    pass
 
-    def __enter__(self):
 
-        return self
-    
-    def __exit__(self):
+class App:
 
+    def __init__(self, name, identitymanager=IdentityManager, dbtypeclass=PersistedCapabilitiesDatabase):
+        self.app_name = name
+
+        # Create the PeerFile special type
+
+        @self.model
+        @self.aggregated
+        class PeerFile:
+            "Special value for file references"
+            
+            _url: str
+            hash: str = ""
+
+            class Content:
+                "Content file-like object"
+                pass
+
+            @property
+            def content(self):
+                "Return a file-like object"
+                return self.Content(self)
+            
+            @content.setter
+            def _write_file(self, bytestream, identity=None):
+                "Write bytes if your identity permits it"
+                pass
+
+        self.PeerFile = PeerFile
+
+
+    # @dataclass_transform()
+    def model(self, model):
+        "PeerModel class decorator"
+
+        return dataclass(slots=True)(type(model.__name__, 
+                    (dataclass(kw_only=True)(model), DocumentObj), 
+                    {}))
+        
+
+    # @dataclass_transform()
+    def event(self, model=None):
+        "PeerModel event decorator"
         pass
+        
+    def aggregated(self, model):
+        "Declare this portion of the document is aggregated and held by reference"
+        model._is_aggregate = True
+        Aggregate(model)
+        return model
 
-    
 
+    def indexed(self, model):
+        "Declare that the document is indexed by this field"
+        model._is_indexed = True
+        Index(model)
+        return model
 
 
 def with_database(func=None, dbtypeclass=PersistedCapabilitiesDatabase):
