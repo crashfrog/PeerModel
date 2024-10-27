@@ -18,42 +18,15 @@ Created from Binfie-cookiecutter, https://github.com/crashfrog/binfie-cookiecutt
 
 ## Notes
 
-Record:
-    UUID
-    model-package-name
-    model-package-version
-    Read-key Fingerprint (for indexing)
-    Read-key encrypted Record Public Key
-    Master-key encrypted Record Private Key
-    Record Private-key encrypted record
+A user can create or join a "ring." A majority of the members of the ring must approve a new member.
 
-PeerFile:
-    IPFS Hash
-    Symmetric-encrypted bytes
+Records created by a member of a ring are owned by the ring. You can specify which ring owns the record, otherwise your default ring is used.
 
-Library key -> Site key -> Site + App key -> personal app keys -> record key
+A member of the ring can extend guest access to the ring's records. A guest has read-only access to the ring's records.
 
-Keysystem -> read key, write key, signing key, encrypt key?
+A member of the ring can make a record public; read-only by everyone.
 
-The PeerModel (pm) library has a master keysystem
-
-A PeerModel data model library has a list of keysystems based on minor version revisions, 
-
-A pm user has personal keys, at least one in different storage mechanisms (as below)
-
-A pm site group has a keysystem, locked by the user's personal keys
-
-A pm site group has guests who receive a read key signed by the site group key and the app key
-
-Ephemeral shared keys
-https://pypi.org/project/shamirs/
-https://www.ewsn.org/file-repository/ewsn2020/174_175_park.pdf
-
-reading a record:
-
-Site read subkey -> record public key
-
-where "->" is a signing relationship?
+A user can request guest access or membership in a ring. A ring member can approve guest access; a majority of ring members can approve membership.
 
 Credential management:
     Mac Keychain via keyring
@@ -69,8 +42,51 @@ Credential management:
     1Password https://pypi.org/project/1password/
     BitWarden https://github.com/corpusops/bitwardentools
 
+## CLI Usage
+```
+$ prmdl --help
+Usage: prmdl [OPTIONS] COMMAND [ARGS]...
 
-IPLD
+  Management interface for PeerModel identity and rings.
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  init  Initialize your identity
+  ring  Commands for managing rings
+
+$ prmdl init --help
+Usage: prmdl init [OPTIONS]
+
+  Initialize your identity
+
+Options:
+  --help  Show this message and exit.
+
+$ prmdl ring --help
+Usage: prmdl ring [OPTIONS] COMMAND [ARGS]...
+
+  Commands for managing rings
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  approve     Approve membership or guest access request
+  create      Initalize keys for a new ring for an existing application
+  invite      Invite new user into the ring
+  list        List rings you're a member of
+  regenerate  Regenerate ring keys
+  review      Review existing access requests
+  revoke      Revoke ring group access and regenerate keys
+
+
+```
+
+
+
+## Example
 
 
 ```

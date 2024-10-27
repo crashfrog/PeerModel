@@ -10,14 +10,14 @@ import logging
 ## @click.argument()
 ## @click.option('-s', '--string-to-echo', 'string')
 ## @click.option('--n', default=1, show_default=True)
-## @click.option("--gr", is_flag=True, show_default=True, default=False, help="Greet the world.")
+## @click.option("--rr", is_flag=True, show_default=True, default=False, help="Greet the world.")
 ## @click.option("--br", is_flag=True, show_default=True, default=True, help="Add a thematic break")
 ## @click.option('--shout/--no-shout', default=False)
 
 
 @click.group()
 def cli():
-    "Management interface for PeerModel identity and site groups."
+    "Management interface for PeerModel identity and rings."
     pass
 
 @cli.command()
@@ -27,46 +27,58 @@ def init():
 
 
 @cli.group()
-def site():
-    "Commands for managing site groups"
+def ring():
+    "Commands for managing rings"
     pass
 
-@site.command("create")
-@click.option("-g", "--site-group", "site_group_name")
-def site_init(db, site_group_name=None):
-    "Initalize keys for a new site group for an existing application"
-    db.site.initialize(site_group_name)
-
-@site.command("invite")
-@click.option("-g", "--site-group", "site_group_name")
-def site_invite(db, site_group_name=None):
-    "Invite new user into the site group"
+@ring.command("list")
+@with_database
+def ring_list(db):
+    "List rings you're a member of"
     pass
 
-@site.command("review")
-@click.option("-g", "--site-group", "site_group_name")
-def site_requests(db, site_group_name=None):
+rarg = click.argument("ring") # ring argument, used by a lot of commands
+
+@ring.command("create")
+@with_database
+def site_init(db):
+    "Initalize keys for a new ring for an existing application"
+    db.site.initialize()
+
+@ring.command("invite")
+@rarg
+@click.argument("identity")
+@with_database
+def site_invite(db, ring, identity):
+    "Invite new user into the ring"
+    pass
+
+@ring.command("review")
+@with_database
+def site_requests(db):
     "Review existing access requests"
     pass
 
-@site.command("approve")
-@click.option("-g", "--site-group", "site_group_name")
-def site_approve(db, site_group_name=None):
-    "Approve request"
+@ring.command("approve")
+@click.argument("request")
+@with_database
+def site_approve(db, request):
+    "Approve membership or guest access request"
     pass
 
-@site.command("revoke")
-@click.option("-g", "--site-group", "site_group_name")
+@ring.command("revoke")
+@rarg
+@click.argument("identity")
 @with_database
-def site_revoke(db, site_group_name=None):
-    "Revoke site group access and regenerate site keys"
+def site_revoke(db, ring, identity):
+    "Revoke ring guest access and regenerate keys"
     pass
 
-@site.command("regenerate")
-@click.option("-g", "--site-group", "site_group_name")
+@ring.command("regenerate")
+@rarg
 @with_database
-def site_regenerate(db, site_group_name=None):
-    "Regenerate site keys"
+def site_regenerate(db, ring):
+    "Regenerate ring keys"
     pass
 
 
@@ -88,33 +100,35 @@ def build_cli(
         
 
 
-    @site.group()
-    @click.option("-g", "--site-group", "site_group_name")
-    def guest():
-        "Commands for managing site guests, invited read-only users of an app"
+    @ring.group()
+    @rarg
+    def guest(ring):
+        "Commands for managing ring guests, invited read-only users of an app"
         pass
 
     @guest.command("invite")
     @with_database
-    def guest_invite(db, ):
+    @rarg
+    def guest_invite(db, ring):
         "Invite new user into the guest group"
         pass
 
     @guest.command("review")
     @with_database
-    def guest_requests(db, ):
+    @rarg
+    def guest_requests(db, ring):
         "Review existing access requests"
         pass
 
     @guest.command("approve")
     @with_database
-    def guest_approve(db, ):
+    def guest_approve(db, ring):
         "Approve request"
         pass
 
     @guest.command("revoke")
     @with_database
-    def guest_revoke(db, ):
+    def guest_revoke(db, ring):
         "Revoke guest access and regenerate site keys"
         pass
 
@@ -122,7 +136,7 @@ def build_cli(
     @cli.command("list")
     @with_database
     def show(db):
-        "List records accessible through your credentials"
+        "Summarize records accessible through your credentials"
         pass
 
     @cli.command("index")
@@ -133,49 +147,48 @@ def build_cli(
 
     @cli.command()
     @click.argument("content")
-    @click.option("-g", "--site-group", "site_group_name")
+    @click.option("-r", "--ring", default=None)
     @with_database
-    def create(db, content, site_group_name=None):
+    def create(db, content, ring=None):
         "Create a record"
         pass
 
     @cli.command()
     @click.argument("id")
-    @click.option("-g", "--site-group", "site_group_name")
+    @click.option("-r", "--ring", default=None)
     @with_database
-    def retrieve(db, id, site_group_name=None):
+    def retrieve(db, id, ring=None):
         "Retrieve record by ID"
         pass
 
     @cli.command()
     @click.argument("id")
     @click.argument("content")
-    @click.option("-g", "--site-group", "site_group_name")
+    @click.option("-r", "--ring", default=None)
     @with_database
-    def update(db, id, content, site_group_name=None):
+    def update(db, id, content, ring=None):
         "Update a record"
         pass
 
     @cli.command()
     @click.argument("id")
-    @click.option("-g", "--site-group", "site_group_name")
+    @click.option("-r", "--ring", default=None)
     @with_database
-    def delete(db, id, site_group_name=None):
+    def delete(db, id, ring=None):
         "Mark a record as retracted"
         pass
 
     @cli.command()
     @click.argument("id")
-    @click.option("-g", "--site-group", "site_group_name")
+    @click.option("-r", "--ring", default=None)
     @with_database
-    def undelete(db, id, site_group_name=None):
-        "Mark a record as unretracted"
+    def undelete(db, id, ring=None):
+        "Unmark a record as retracted"
         pass
 
     @cli.command()
     @click.argument("id")
     @click.argument("tag")
-    @click.option("-g", "--site-group", "site_group_name")
     @with_database
     def tag(db, id, tag=""):
         "Add a public tag to a record"
@@ -199,23 +212,22 @@ def build_cli(
 
     @cli.group()
     def start():
-        "Commands to manage the peer service"
+        "Start the peer service"
         pass
 
     @start.command()
     def events():
-        "Start the event listener service."
+        "Start the event listener service"
         pass
-
 
     @cli.group()
     def stop():
-        "Commands to manage the peer service"
+        "Stop the peer service"
         pass
 
     @stop.command()
     def events():
-        "Stop the event listener service."
+        "Stop the event listener service"
         pass
 
 

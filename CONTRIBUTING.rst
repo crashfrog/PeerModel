@@ -7,6 +7,7 @@ Contributing
 Contributions are welcome, and they are greatly appreciated! Every little bit
 helps, and credit will always be given.
 
+
 You can contribute in many ways:
 
 Types of Contributions
@@ -62,12 +63,12 @@ Ready to contribute? Here's how to set up `peermodel` for local development.
 1. Fork the `peermodel` repo on GitHub.
 2. Clone your fork locally::
 
-    $ git clone git@github.com:your_name_here/peermodel.git
+    $ git clone git@github.com:your-name-here/peermodel.git
 
 3. Install your local copy into a virtualenv. Assuming you have virtualenvwrapper installed, this is how you set up your fork for local development::
 
     $ cd peermodel/
-    $ python setup.py dev
+    $ make dev
 
 4. Create a branch for local development::
 
@@ -101,7 +102,7 @@ Before you submit a pull request, check that it meets these guidelines:
 2. If the pull request adds functionality, the docs should be updated. Put
    your new functionality into a function with a docstring, and add the
    feature to the list in README.rst.
-3. The pull request should work for Python 3.5, 3.6, 3.7 and 3.8, and for PyPy. Check
+3. The pull request should work for Python 3.8 - 3.12, and for PyPy. Check
    https://travis-ci.com/crashfrog/peermodel/pull_requests
    and make sure that the tests pass for all supported Python versions.
 
@@ -124,4 +125,4 @@ $ make release
 $ git push
 $ git push --tags
 
-Travis will then deploy to PyPI if tests pass.
+And then create a new release on GitHub and publish the docs on PyPI.

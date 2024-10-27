@@ -1,14 +1,18 @@
 from abc import ABC, abstractmethod
-# from typing import dataclass_transform
+from typing import Iterator
 from contextlib import AbstractContextManager, AbstractAsyncContextManager, wraps
 from functools import wraps
 from collections import defaultdict
+from collections.abc import MutableMapping
 from dataclasses import dataclass, InitVar, field, fields, KW_ONLY
 import uuid
 import json
 
-from peermodel.capabilities import Site, Guests, IdentityManager
+from peermodel.capabilities import IdentityManager, UnauthorizedAccess
+from peermodel.delegation import Ring, Guest
+from peermodel.iplddict import NamespacedIPLDDictionary
 
+from cryptography.fernet import Fernet
 
 "Main peermodel module."
 
@@ -132,13 +136,10 @@ class DocumentObj:
 
 class AbstractTypedDocumentDatabase(AbstractContextManager):
 
-    Site = Site
-    Guests = Guests
+    #Class configuration and delegates
 
      
     def __init__(self, app_name=None):
-        self.site = self.Site()
-        self.guests = self.Guests()
         self.app_name = app_name
 
     @abstractmethod
@@ -161,6 +162,18 @@ class AbstractTypedDocumentDatabase(AbstractContextManager):
         "If value is aggregable, return a reference to it"
         self._persist_record(record)
         return "Ref", type(record).__name__, record._id
+    
+    # Contextmanager api
+
+    @abstractmethod
+    def __enter__(self):
+        pass
+
+    @abstractmethod
+    def __exit__(self, *args, **kwargs):
+        pass
+
+    # CLI api
 
     def list(self):
         pass
@@ -211,8 +224,6 @@ class InMemoryDocumentDatabase(AbstractTypedDocumentDatabase):
     def _retrieve_record(self, record_type, record_id):
         return record_type._from_storage(self, record_id, self._records[record_type.__name__][record_id])
     
-
-        
     def __repr__(self):
         return str(self._records)
 
@@ -221,17 +232,51 @@ class InMemoryDocumentDatabase(AbstractTypedDocumentDatabase):
 class InMemoryCapabilitiesDatabase(InMemoryDocumentDatabase):
     "Encrypted records implementation"
 
+    Ring = Ring
+    IdentityManager = IdentityManager
+
     def __init__(self, identity_manager, encoding='UTF-8', *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.identity = identity_manager()
+        self.identity = identity_manager.getIdentity()
+        self.ring = self.Ring.lookupRing(self.identity, self)
         self.encoding = encoding
 
+    def _persist_record(self, record):
+        name, id, to_store = record._to_storage(self)
+        record_readkey = self.ring.generateRecordKey()
+        self._records[name][id] = [ 
+            self.ring.signature,
+            [self.ring.keysystem.encrypt(record_readkey.encode(self.encoding), reader) for reader in self.ring.readers], 
+            Fernet(record_readkey).encrypt(json.dumps(to_store).encode(self.encoding))
+        ]
+        return True
 
-class PersistedCapabilitiesDatabase(InMemoryCapabilitiesDatabase):
+    def _retrieve_record(self, record_type, record_id):
+        signature, keylist, encrypted_record = self._records[record_type.__name__][record_id]
+        try:
+            record = self.ring.keysystem.decrypt(keylist, encrypted_record, encoding=self.encoding)
+        except UnauthorizedAccess as e:
+            e.encryptor_signature = signature
+            raise e
+
+        return record_type._from_storage(self, record_id, record)
+
+
+class PersistedDatabase(InMemoryDocumentDatabase):
     "Persists records using IPFS / IPLD"
-        
-    pass
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._records = NamespacedIPLDDictionary(self.app_name)
+        
+    def __enter__(self):
+        return self # Do nothing
+
+    def __exit__(self, *args, **kwargs):
+        pass # Do nothing
+
+class PersistedCapabilitiesDatabase(PersistedDatabase, InMemoryCapabilitiesDatabase):
+    pass
 
 class App:
 

@@ -5,11 +5,15 @@
 import pytest
 from unittest import skip
 
+import json
+
 from hypothesis import given
 from hypothesis.strategies import text
 
 import peermodel
 import peermodel.capabilities
+
+from cryptography.fernet import Fernet
 
 # @skip
 # def test_pymonkey():
@@ -91,7 +95,7 @@ def test_type_registry(doc):
 def test_prepare_for_serialization(doc, pickled_doc):
     assert pickled_doc == ('TestDocument',
                           doc._id,
-                          {"test":""})
+                          {"test": ""})
 
 def test_mem_write(memdb, doc):
     assert memdb._persist_record(doc)
@@ -165,7 +169,7 @@ def test_mem_writeread_aggregated(memdb, aggdoc):
 
 
 @pytest.fixture
-def secdb(tmp_path):
+def secdb(tmp_path, Fernet_key=Fernet.generate_key()):
 
     from peermodel.capabilities import IdentityManager
 
@@ -176,14 +180,52 @@ def secdb(tmp_path):
         @classmethod
         def ready(cls):
             return True
+        
+        @classmethod
+        def getIdentity(cls):
+            return "test_identity"
+        
+    class TestKeysystem(peermodel.capabilities.Keysystem):
+
+        def encrypt(self, data, encrypt_key):
+            return json.dumps(data)[::-1]
+
+        def decrypt(self, keylist, data, encoding='UTF-8'):
+            return json.loads(data[::-1])
+        
+    class TestRing(peermodel.Ring):
+
+        @classmethod
+        def lookupRing(cls, identity, db):
+            return TestRing()
+
+        @property
+        def keysystem(self):
+            return TestKeysystem()
+        
+        @property
+        def guests(self):
+            return iter([])
+        
+        @property
+        def members(self):
+            return iter([])
+        
+        def generateRecordKey(self):
+            return Fernet_key
+        
+        @property
+        def signature(self):
+            return "test_sig"
 
     with peermodel.InMemoryCapabilitiesDatabase(identity_manager=TestIdentityManager) as db:
+        db.ring = TestRing()
         yield db
 
 def test_secure_write_is_secure(secdb, doc, pickled_doc):
     "Test should fail if the document content is recognizably in storage"
     secdb._persist_record(doc)
-    assert pickled_doc[2] != secdb._records["TestDocument"][doc._id]
+    assert pickled_doc[2] != secdb._records["TestDocument"][doc._id] and pickled_doc[2]
 
 def test_secure_mem_write(secdb, doc):
     assert secdb._persist_record(doc)
