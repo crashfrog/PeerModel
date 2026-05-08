@@ -8,6 +8,7 @@ from dataclasses import dataclass, InitVar, field, fields, KW_ONLY
 import uuid
 import json
 
+
 from peermodel.capabilities import IdentityManager, UnauthorizedAccess
 from peermodel.delegation import Ring, Guest
 from peermodel.iplddict import NamespacedIPLDDictionary
@@ -132,6 +133,10 @@ class DocumentObj:
             raise Exception(db, rec)
         obj._id = id
         return obj
+    
+    @classmethod
+    def classes(cls):
+        return cls.Meta._reg.values()
 
 
 class AbstractTypedDocumentDatabase(AbstractContextManager):
