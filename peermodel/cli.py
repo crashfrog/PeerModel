@@ -27,6 +27,78 @@ def init():
 
 
 @cli.group()
+def token():
+    "Commands for managing hardware tokens (PIV cards, YubiKeys)"
+    pass
+
+
+@token.command("list")
+def token_list():
+    "List detected hardware tokens"
+    try:
+        import cohortcrypto.hardware as hw
+        tokens = hw.enumerate_tokens()
+        if not tokens:
+            click.echo("No hardware tokens detected.")
+            return
+
+        click.echo(f"Found {len(tokens)} token(s):")
+        for tok in tokens:
+            click.echo(f"  Slot {tok.slot_id}: {tok.token_label}")
+            click.echo(f"    Serial: {tok.token_serial}")
+            click.echo(f"    Manufacturer: {tok.manufacturer}")
+    except ImportError:
+        click.echo("Error: cohortcrypto not installed. Install with: pip install -e .[hardware]", err=True)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+
+
+@token.command("init")
+@click.option('--slot-id', type=int, default=None, help='Token slot ID (default: auto-detect)')
+@click.option('--pin', prompt=True, hide_input=True, help='Token PIN')
+def token_init(slot_id, pin):
+    "Initialize identity from hardware token"
+    try:
+        import cohortcrypto.hardware as hw
+        from peermodel.capabilities import HardwareIdentityManager, HardwareKeysystem
+
+        with hw.open_token(slot_id=slot_id, pin=pin) as session:
+            identity = hw.credential_from_token(session, 'hardware_identity')
+            click.echo(f"✓ Identity initialized from token:")
+            click.echo(f"  Token: {session.token_label}")
+            click.echo(f"  Serial: {session.token_serial}")
+            click.echo(f"  PIV Slot: {session.piv_slot.value if hasattr(session.piv_slot, 'value') else session.piv_slot}")
+            click.echo(f"  Signing Algorithm: {identity.signing_algorithm}")
+            click.echo(f"  Encryption Algorithm: {identity.encryption_algorithm}")
+    except ImportError:
+        click.echo("Error: cohortcrypto not installed. Install with: pip install -e .[hardware]", err=True)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+
+
+@token.command("info")
+def token_info():
+    "Show current hardware token information"
+    try:
+        import cohortcrypto.hardware as hw
+        tokens = hw.enumerate_tokens()
+        if not tokens:
+            click.echo("No hardware tokens available.")
+            return
+
+        tok = tokens[0]
+        click.echo(f"Primary Token:")
+        click.echo(f"  Label: {tok.token_label}")
+        click.echo(f"  Serial: {tok.token_serial}")
+        click.echo(f"  Manufacturer: {tok.manufacturer}")
+        click.echo(f"  Slot: {tok.slot_id}")
+    except ImportError:
+        click.echo("Error: cohortcrypto not installed.", err=True)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+
+
+@cli.group()
 def ring():
     "Commands for managing rings"
     pass

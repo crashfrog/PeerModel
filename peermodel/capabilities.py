@@ -213,4 +213,154 @@ class SoftwareIdentityManager(IdentityManager):
             json.dump(config_dict, f, indent=2)
 
 
+class HardwareKeysystem(Keysystem):
+    """Hardware-backed keysystem using PKCS#11 tokens."""
+
+    def __init__(self, session):
+        """Initialize with open token session.
+
+        Args:
+            session: TokenSession from cohortcrypto.hardware.open_token
+                    Must have _x25519_private attribute (mock or real hardware)
+        """
+        self.session = session
+        # For decryption, we need the X25519 private key
+        # In mock mode: session._x25519_private
+        # In real hardware: would use token's on-token ECDH operations
+        if hasattr(session, '_x25519_private'):
+            self.x25519_private_der = session._x25519_private
+        else:
+            # Real hardware tokens don't expose private keys
+            # Would need to implement on-token ECDH via PKCS#11
+            self.x25519_private_der = None
+
+    def encrypt(self, data: Union[str, bytes], recipient_public_key_der) -> bytes:
+        """Encrypt data to recipient's public key using software ECDH.
+
+        Note: Encryption always uses software (ephemeral keypair for ECDH).
+        Hardware token is not used for encryption operations.
+
+        Args:
+            data: Plaintext to encrypt (str or bytes)
+            recipient_public_key_der: Recipient's X25519 public key (DER-encoded)
+
+        Returns:
+            bytes: Encrypted envelope containing [ciphertext, nonce, tag, ephemeral_public_key]
+        """
+        if isinstance(data, str):
+            data = data.encode('utf-8')
+
+        ciphertext, nonce, tag, ephemeral_public = primitives.encrypt_to_recipient(
+            data, recipient_public_key_der
+        )
+
+        return [ciphertext, nonce, tag, ephemeral_public]
+
+    def decrypt(self, keylist, data: bytes, encoding='UTF-8') -> Union[str, bytes]:
+        """Decrypt data using hardware token's private key.
+
+        Args:
+            keylist: List of [ciphertext, nonce, tag, ephemeral_public_key] envelopes
+            data: Encrypted record data (Fernet token)
+            encoding: Text encoding for string results
+
+        Returns:
+            Union[str, bytes]: Decrypted plaintext
+
+        Raises:
+            UnauthorizedAccess: If no key in keylist can decrypt the data
+        """
+        from cryptography.fernet import Fernet as FernetCipher
+
+        if not self.x25519_private_der:
+            raise UnauthorizedAccess(
+                "Hardware token does not expose private key; cannot decrypt",
+                encryptor_signature=None
+            )
+
+        for envelope in keylist:
+            try:
+                ciphertext, nonce, tag, ephemeral_public = envelope
+                fernet_key_bytes = primitives.decrypt_from_sender(
+                    ciphertext, nonce, tag, ephemeral_public, self.x25519_private_der
+                )
+                f = FernetCipher(fernet_key_bytes)
+                plaintext = f.decrypt(data)
+                if encoding:
+                    return plaintext.decode(encoding)
+                return plaintext
+            except Exception:
+                continue
+
+        raise UnauthorizedAccess(
+            "Unauthorized access; no key issued to your identity",
+            encryptor_signature=None
+        )
+
+
+class HardwareIdentityManager(IdentityManager):
+    """Identity manager backed by hardware token (PIV card, YubiKey, etc.)."""
+
+    @dataclass
+    class Config:
+        token_label: str = ""
+        token_serial: str = ""
+        slot_id: int = 0
+        piv_slot: str = "AUTO"
+
+    def __init__(self, session=None):
+        super().__init__()
+        self.session = session
+
+    @classmethod
+    def ready(cls):
+        """Check if hardware token is available."""
+        try:
+            import cohortcrypto.hardware as hw
+            tokens = hw.enumerate_tokens()
+            return len(tokens) > 0
+        except Exception:
+            return False
+
+    @classmethod
+    def from_token(cls, session):
+        """Create identity manager from open token session.
+
+        Args:
+            session: Open TokenSession from cohortcrypto.hardware.open_token
+
+        Returns:
+            HardwareIdentityManager: New identity manager with session
+        """
+        manager = cls(session)
+        manager.config = cls.Config(
+            token_label=session.token_label,
+            token_serial=session.token_serial,
+            slot_id=session.slot_id,
+            piv_slot=session.piv_slot.value if hasattr(session.piv_slot, 'value') else str(session.piv_slot)
+        )
+        return manager
+
+    def getIdentity(self) -> dict:
+        """Get identity from hardware token.
+
+        Returns:
+            dict: Identity information with public keys from token
+        """
+        if not self.session:
+            raise KeyGenerationError("No token session available")
+
+        return {
+            'token_label': self.session.token_label,
+            'token_serial': self.session.token_serial,
+            'slot_id': self.session.slot_id,
+            'piv_slot': self.session.piv_slot,
+            'x25519_public': self.session.x25519_public,
+            'ed25519_public': self.session.ed25519_public,
+            'signing_algorithm': self.session.signing_algorithm,
+            'encryption_algorithm': self.session.encryption_algorithm,
+            'hardware_backed': True
+        }
+
+
 # Specific IdentityManager implementations

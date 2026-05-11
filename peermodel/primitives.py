@@ -6,11 +6,25 @@ No custom crypto implementations.
 
 import os
 import base64
+from dataclasses import dataclass
+from typing import Optional
 from cryptography.hazmat.primitives.asymmetric import x25519, ed25519
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.fernet import Fernet, InvalidToken
 from peermodel.exceptions import DecryptionError, KeyGenerationError, SignatureVerificationError
+
+
+@dataclass
+class MemberCredential:
+    """Member identity and cryptographic keys."""
+    member_id: str
+    x25519_public: bytes
+    ed25519_public: bytes
+    signing_algorithm: str = "ed25519"
+    encryption_algorithm: str = "x25519"
+    hardware_backed: bool = False
+    certificate_der: Optional[bytes] = None
 
 
 def generate_keypair():
