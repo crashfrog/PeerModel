@@ -1,14 +1,20 @@
 from abc import ABC, abstractmethod
-# from typing import dataclass_transform
+from typing import Iterator
 from contextlib import AbstractContextManager, AbstractAsyncContextManager, wraps
 from functools import wraps
 from collections import defaultdict
+from collections.abc import MutableMapping
 from dataclasses import dataclass, InitVar, field, fields, KW_ONLY
 import uuid
 import json
 
-from peermodel.capabilities import Site, Guests, IdentityManager
 
+from peermodel.capabilities import IdentityManager
+from peermodel.exceptions import UnauthorizedAccess
+from peermodel.delegation import Cohort, Guest
+from peermodel.iplddict import NamespacedIPLDDictionary
+
+from cryptography.fernet import Fernet
 
 "Main peermodel module."
 
@@ -128,17 +134,18 @@ class DocumentObj:
             raise Exception(db, rec)
         obj._id = id
         return obj
+    
+    @classmethod
+    def classes(cls):
+        return cls.Meta._reg.values()
 
 
 class AbstractTypedDocumentDatabase(AbstractContextManager):
 
-    Site = Site
-    Guests = Guests
+    #Class configuration and delegates
 
      
     def __init__(self, app_name=None):
-        self.site = self.Site()
-        self.guests = self.Guests()
         self.app_name = app_name
 
     @abstractmethod
@@ -161,6 +168,18 @@ class AbstractTypedDocumentDatabase(AbstractContextManager):
         "If value is aggregable, return a reference to it"
         self._persist_record(record)
         return "Ref", type(record).__name__, record._id
+    
+    # Contextmanager api
+
+    @abstractmethod
+    def __enter__(self):
+        pass
+
+    @abstractmethod
+    def __exit__(self, *args, **kwargs):
+        pass
+
+    # CLI api
 
     def list(self):
         pass
@@ -211,8 +230,6 @@ class InMemoryDocumentDatabase(AbstractTypedDocumentDatabase):
     def _retrieve_record(self, record_type, record_id):
         return record_type._from_storage(self, record_id, self._records[record_type.__name__][record_id])
     
-
-        
     def __repr__(self):
         return str(self._records)
 
@@ -221,17 +238,52 @@ class InMemoryDocumentDatabase(AbstractTypedDocumentDatabase):
 class InMemoryCapabilitiesDatabase(InMemoryDocumentDatabase):
     "Encrypted records implementation"
 
+    Cohort = Cohort
+    IdentityManager = IdentityManager
+
     def __init__(self, identity_manager, encoding='UTF-8', *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.identity = identity_manager()
+        self.identity = identity_manager.getIdentity()
+        self.cohort = self.Cohort.lookupCohort(self.identity, self)
         self.encoding = encoding
 
+    def _persist_record(self, record):
+        name, id, to_store = record._to_storage(self)
+        record_readkey = self.cohort.generateRecordKey()
+        self._records[name][id] = [
+            self.cohort.signature,
+            [self.cohort.keysystem.encrypt(record_readkey, reader['x25519_public']) for reader in self.cohort.readers],
+            Fernet(record_readkey).encrypt(json.dumps(to_store).encode(self.encoding))
+        ]
+        return True
 
-class PersistedCapabilitiesDatabase(InMemoryCapabilitiesDatabase):
+    def _retrieve_record(self, record_type, record_id):
+        signature, keylist, encrypted_record = self._records[record_type.__name__][record_id]
+        try:
+            record_json = self.cohort.keysystem.decrypt(keylist, encrypted_record, encoding=self.encoding)
+        except UnauthorizedAccess as e:
+            e.encryptor_signature = signature
+            raise e
+
+        record = json.loads(record_json)
+        return record_type._from_storage(self, record_id, record)
+
+
+class PersistedDatabase(InMemoryDocumentDatabase):
     "Persists records using IPFS / IPLD"
-        
-    pass
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._records = NamespacedIPLDDictionary(self.app_name)
+        
+    def __enter__(self):
+        return self # Do nothing
+
+    def __exit__(self, *args, **kwargs):
+        pass # Do nothing
+
+class PersistedCapabilitiesDatabase(PersistedDatabase, InMemoryCapabilitiesDatabase):
+    pass
 
 class App:
 

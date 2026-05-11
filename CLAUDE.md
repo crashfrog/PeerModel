@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-PeerModel is a secure capabilities-based peer-to-peer ORM built on OrbitDB and IPFS. It provides encrypted, decentralized data storage with ring-based access control and capability-based security. The system uses cryptographic keys for both identity management and access control, with support for hardware tokens (PIV cards, YubiKeys).
+PeerModel is a secure capabilities-based peer-to-peer ORM built on OrbitDB and IPFS. It provides encrypted, decentralized data storage with cohort-based access control and capability-based security. The system uses cryptographic keys for both identity management and access control, with support for hardware tokens (PIV cards, YubiKeys).
 
 ## Development Commands
 
@@ -26,8 +26,14 @@ make test
 # Run specific test file
 pytest peermodel/tests/test_peermodel.py
 
+# Run a single test
+pytest peermodel/tests/test_peermodel.py::test_function_name
+
 # Run with coverage
 make coverage
+
+# Run with verbose output and stop on first failure
+pytest -v -x
 ```
 
 ### Code Quality
@@ -59,13 +65,29 @@ prmdl --help
 # Initialize identity
 prmdl init
 
-# Ring management
-prmdl ring create
-prmdl ring list
-prmdl ring invite <ring> <identity>
+# Cohort management
+prmdl cohort create
+prmdl cohort list
+prmdl cohort invite <cohort> <identity>
 ```
 
 ## Architecture
+
+### Module Dependency Graph
+
+```
+App (peermodel.py)
+├── IdentityManager (capabilities.py)
+├── Keysystem (capabilities.py)
+├── Cohort & Guest (delegation.py)
+└── Database implementations (peermodel.py)
+    ├── NamespacedIPLDDictionary (iplddict.py)
+    └── Fernet encryption (cryptography)
+
+CLI (cli.py)
+├── App
+└── Cohort commands
+```
 
 ### Core Components
 
@@ -73,7 +95,7 @@ prmdl ring invite <ring> <identity>
 - `DocumentObj`: Base mixin for all model objects, provides serialization, UUIDs, and type registry
 - `AbstractTypedDocumentDatabase`: Abstract base for database implementations
 - `InMemoryDocumentDatabase`: Basic in-memory storage (no encryption, no persistence)
-- `InMemoryCapabilitiesDatabase`: In-memory storage with encryption and ring-based access control
+- `InMemoryCapabilitiesDatabase`: In-memory storage with encryption and cohort-based access control
 - `PersistedDatabase`: IPFS/IPLD persistence layer
 - `PersistedCapabilitiesDatabase`: Full implementation with encryption and IPFS persistence
 - `App`: Main application class that provides `@model`, `@event`, `@aggregated`, and `@indexed` decorators
@@ -84,21 +106,26 @@ prmdl ring invite <ring> <identity>
 - `ECDSAKeysystem`: ECDSA-based key exchange implementation
 - `UnauthorizedAccess`: Exception raised when decryption fails due to missing keys
 
-**delegation.py** — Ring-based access control
-- `Ring`: Abstract base for access control rings (groups with read/write permissions)
+**delegation.py** — Cohort-based access control (NEW — part of cryptosystem architecture)
+- `Cohort`: Abstract base for access control cohorts (groups with read/write permissions)
   - Members have full read/write access
   - Guests have read-only access
-  - Records are encrypted with ring keys
+  - Records are encrypted with cohort keys
+- `SimpleCohort`: Concrete implementation with membership proposals and voting
 - `Guest`: Interface for guest access management
 
-**iplddict.py** — IPLD/IPFS persistence layer
+**membership.py** — Membership proposal and voting structures (NEW — Phase 2)
+- `MembershipProposal`: Data structure for add/expel proposals with voting
+- `MembershipVote`: Cryptographically signed vote on a proposal
+
+**iplddict.py** — IPLD/IPFS persistence layer (NEW — part of cryptosystem architecture)
 - `NamespacedIPLDDictionary`: Dict-like interface to IPLD merkle forest
 - `SqliteRecordManagerDictionary`: SQLite-backed record storage with multi-db support
 
 **cli.py** — Command-line interface
 - Built with Click
 - `build_cli()`: Factory function for creating application-specific CLIs
-- Ring commands: create, invite, approve, revoke, regenerate
+- Cohort commands: create, invite, vote, approve, revoke, regenerate
 - CRUD commands: create, retrieve, update, delete, tag, publish
 
 ### Key Concepts
@@ -117,33 +144,48 @@ prmdl ring invite <ring> <identity>
 
 **Encryption and Access Control**
 - Records are encrypted with a per-record Fernet key
-- Record keys are themselves encrypted for each ring member/guest
-- Storage format: `[ring_signature, [encrypted_keys...], encrypted_record]`
+- Record keys are themselves encrypted for each cohort member/guest
+- Storage format: `[cohort_signature, [encrypted_keys...], encrypted_record]`
 - Unauthorized access raises `UnauthorizedAccess` with the encryptor's signature
 
-**Ring Model**
-- Users belong to rings; rings control access to records
-- Default public ring for public records
-- Majority approval required for new ring members
+**Cohort Model**
+- Users belong to cohorts; cohorts control access to records
+- Default public cohort for public records
+- Majority approval (>50%) required for new cohort members
+- Membership decisions use cryptographically signed voting
 - Any member can grant guest (read-only) access
-- Key regeneration revokes all previous access
+- Key regeneration revokes all previous access (forward secrecy)
+- Expelled members cannot decrypt records created after expulsion
 
 ### Testing Patterns
 
-Tests use pytest with hypothesis for property-based testing. Key fixtures:
-- `peer`: Creates an `App` instance
-- `memdb`: In-memory database context
-- `secdb`: In-memory capabilities database with test ring/identity
-- `doc`, `complexdoc`, `aggdoc`: Various document types for testing
+Tests use pytest with hypothesis for property-based testing. Test fixtures are defined in test files:
 
-Test aggregated documents by checking that references are created (starts with `"Ref"`).
+- `peer`: Creates an `App` instance with default model decorators
+- `memdb`: In-memory database context (no encryption, no persistence)
+- `secdb`: In-memory capabilities database with test cohort/identity (encryption enabled)
+- `test_cohort`: Single-founder cohort for membership tests
+- `multi_member_cohort`: Two-member cohort for voting tests
+- `alice_identity`, `bob_identity`, `carol_identity`: Generated identities with keypairs
 
-Test encryption by verifying that stored content doesn't match plaintext.
+**Aggregated documents**: References are stored as `("Ref", typename, id)`. Assert that stored content matches this pattern.
+
+**Encryption**: Verify that stored content in encrypted databases doesn't match plaintext by checking the storage format: `[cohort_signature, [encrypted_keys...], encrypted_record]`.
+
+**Cohort access control**: Use fixtures with pre-configured cohorts and verify that unauthorized members raise `UnauthorizedAccess` when attempting to decrypt.
+
+**Membership proposals**: Test voting thresholds (majority >50%), signature verification, and forward secrecy on expulsion.
 
 ## Notes
 
-- The codebase is transitioning away from a JS-based backend (see commented imports of `js2py`, `libp2p`, `helia`, `orbitdb`)
-- Hardware token support (PIV, CAC, YubiKeys) is planned but not fully implemented
-- See `IMPLEMENTATION_CRYPTOSYSTEM_SPEC.md` for detailed cryptographic architecture plans
-- Identity configuration stored in `~/.peermodel/idconfig.json`
-- CLI entry point is `prmdl` (defined in `pyproject.toml`)
+- **Cryptosystem Architecture**: The repo is implementing a multi-institutional cohort-based cryptosystem. See `IMPLEMENTATION_CRYPTOSYSTEM_SPEC.md` for the complete specification, including hardware token support (PIV, YubiKey, PKCS#11), envelope encryption, and membership voting. The `delegation.py` and `iplddict.py` modules are key to this implementation.
+  
+- **Hardware Token Support**: PIV/CAC/YubiKey integration is designed but not yet fully integrated into the ORM layer. The spec defines the API but production code is still being written.
+
+- **Legacy Code**: Commented imports of `js2py`, `libp2p`, `helia`, `orbitdb` are from earlier JS-based backend; safe to ignore or remove when refactoring.
+
+- **Configuration**: Identity and cohort state stored in `~/.peermodel/idconfig.json` and SQLite databases (location depends on cohort).
+
+- **CLI Entry Point**: `prmdl` command-line tool (defined in `pyproject.toml`); see `peermodel/cli.py` for `build_cli()` factory.
+
+- **Python Version**: Requires Python 3.7+; uses dataclass syntax and type hints extensively.

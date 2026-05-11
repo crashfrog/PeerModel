@@ -5,11 +5,17 @@
 import pytest
 from unittest import skip
 
+import json
+
 from hypothesis import given
 from hypothesis.strategies import text
 
 import peermodel
 import peermodel.capabilities
+import peermodel.primitives
+from peermodel.delegation import SimpleCohort
+
+from cryptography.fernet import Fernet
 
 # @skip
 # def test_pymonkey():
@@ -91,7 +97,7 @@ def test_type_registry(doc):
 def test_prepare_for_serialization(doc, pickled_doc):
     assert pickled_doc == ('TestDocument',
                           doc._id,
-                          {"test":""})
+                          {"test": ""})
 
 def test_mem_write(memdb, doc):
     assert memdb._persist_record(doc)
@@ -166,24 +172,45 @@ def test_mem_writeread_aggregated(memdb, aggdoc):
 
 @pytest.fixture
 def secdb(tmp_path):
+    from peermodel.capabilities import SoftwareIdentityManager
 
-    from peermodel.capabilities import IdentityManager
+    x25519_priv, x25519_pub, ed25519_priv, ed25519_pub = peermodel.primitives.generate_keypair()
 
-    class TestIdentityManager(IdentityManager):
+    test_identity = {
+        'identity_id': 'test_identity',
+        'x25519_private': x25519_priv,
+        'x25519_public': x25519_pub,
+        'ed25519_private': ed25519_priv,
+        'ed25519_public': ed25519_pub
+    }
 
+    class TestIdentityManager(SoftwareIdentityManager):
         home = tmp_path / "id_tmp"
 
         @classmethod
         def ready(cls):
             return True
 
+        @classmethod
+        def getIdentity(cls):
+            return test_identity
+
+    test_cohort = SimpleCohort(
+        cohort_id='test_cohort',
+        founder_identity=test_identity,
+        members=[test_identity],
+        guests=[],
+        signing_key_der=ed25519_priv
+    )
+
     with peermodel.InMemoryCapabilitiesDatabase(identity_manager=TestIdentityManager) as db:
+        db.cohort = test_cohort
         yield db
 
 def test_secure_write_is_secure(secdb, doc, pickled_doc):
     "Test should fail if the document content is recognizably in storage"
     secdb._persist_record(doc)
-    assert pickled_doc[2] != secdb._records["TestDocument"][doc._id]
+    assert pickled_doc[2] != secdb._records["TestDocument"][doc._id] and pickled_doc[2]
 
 def test_secure_mem_write(secdb, doc):
     assert secdb._persist_record(doc)
@@ -204,6 +231,94 @@ def test_secure_mem_write_complex(secdb, complexdoc):
 def test_secure_mem_writeread_complex(secdb, complexdoc):
     secdb._persist_record(complexdoc)
     assert secdb._retrieve_record(type(complexdoc), complexdoc._id) == complexdoc
+
+
+def test_primitives_generate_keypair():
+    """Test X25519/Ed25519 keypair generation."""
+    x25519_priv, x25519_pub, ed25519_priv, ed25519_pub = peermodel.primitives.generate_keypair()
+    assert x25519_priv and len(x25519_priv) > 0
+    assert x25519_pub and len(x25519_pub) > 0
+    assert ed25519_priv and len(ed25519_priv) > 0
+    assert ed25519_pub and len(ed25519_pub) > 0
+
+
+def test_primitives_encrypt_decrypt_roundtrip():
+    """Test encryption and decryption with X25519 ECDH."""
+    sender_x25519_priv, sender_x25519_pub, _, _ = peermodel.primitives.generate_keypair()
+    recipient_x25519_priv, recipient_x25519_pub, _, _ = peermodel.primitives.generate_keypair()
+
+    plaintext = b"Hello, encrypted world!"
+
+    ciphertext, nonce, tag, ephemeral_pub = peermodel.primitives.encrypt_to_recipient(
+        plaintext, recipient_x25519_pub
+    )
+
+    decrypted = peermodel.primitives.decrypt_from_sender(
+        ciphertext, nonce, tag, ephemeral_pub, recipient_x25519_priv
+    )
+
+    assert decrypted == plaintext
+
+
+def test_primitives_sign_verify():
+    """Test Ed25519 signing and verification."""
+    _, _, ed25519_priv, ed25519_pub = peermodel.primitives.generate_keypair()
+
+    message = b"Sign this message"
+    signature = peermodel.primitives.sign_bytes(message, ed25519_priv)
+
+    assert peermodel.primitives.verify_bytes(message, signature, ed25519_pub) is True
+
+
+def test_primitives_verify_wrong_signature():
+    """Test that verification fails with wrong signature."""
+    _, _, ed25519_priv, ed25519_pub = peermodel.primitives.generate_keypair()
+
+    message = b"Sign this message"
+    wrong_signature = b"wrong signature bytes"
+
+    assert peermodel.primitives.verify_bytes(message, wrong_signature, ed25519_pub) is False
+
+
+def test_primitives_decrypt_with_wrong_key():
+    """Test that decryption fails with wrong key."""
+    from peermodel.exceptions import DecryptionError
+
+    recipient1_x25519_priv, recipient1_x25519_pub, _, _ = peermodel.primitives.generate_keypair()
+    recipient2_x25519_priv, _, _, _ = peermodel.primitives.generate_keypair()
+
+    plaintext = b"Secret message"
+
+    ciphertext, nonce, tag, ephemeral_pub = peermodel.primitives.encrypt_to_recipient(
+        plaintext, recipient1_x25519_pub
+    )
+
+    with pytest.raises(DecryptionError):
+        peermodel.primitives.decrypt_from_sender(
+            ciphertext, nonce, tag, ephemeral_pub, recipient2_x25519_priv
+        )
+
+
+def test_keysystem_encrypt_decrypt():
+    """Test SoftwareKeysystem encryption/decryption of Fernet keys."""
+    x25519_priv1, x25519_pub1, ed25519_priv1, ed25519_pub1 = peermodel.primitives.generate_keypair()
+    x25519_priv2, x25519_pub2, ed25519_priv2, ed25519_pub2 = peermodel.primitives.generate_keypair()
+
+    keysystem1 = peermodel.capabilities.SoftwareKeysystem(
+        x25519_priv1, x25519_pub1, ed25519_priv1, ed25519_pub1
+    )
+    keysystem2 = peermodel.capabilities.SoftwareKeysystem(
+        x25519_priv2, x25519_pub2, ed25519_priv2, ed25519_pub2
+    )
+
+    fernet_key = Fernet.generate_key()
+    plaintext = b"Hello keysystem"
+
+    envelope = keysystem1.encrypt(fernet_key, x25519_pub2)
+    encrypted_data = Fernet(fernet_key).encrypt(plaintext)
+
+    decrypted = keysystem2.decrypt([envelope], encrypted_data)
+    assert decrypted == plaintext.decode('utf-8')
 
 
 

@@ -1,23 +1,26 @@
-from peermodel.capabilities import IdentityManager, Keysystem
-from typing import Union, Iterator
+from peermodel.capabilities import IdentityManager, Keysystem, SoftwareKeysystem
+from peermodel import primitives
+from typing import Union, Iterator, List, Optional
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from itertools import chain
+from cryptography.fernet import Fernet
+import json
 
 """
-A ring model of delegation where the ring is the group of people who have access to a peermodel database.
+A cohort model of delegation where the cohort is the group of people who have access to a peermodel database.
 
-A ring is a group of people who have access to a peermodel database. Each ring has a unique name, and each person in the ring has a unique identity. The ring is the group of people who have access to the database, and the identity is the unique identifier for each person in the ring.
+A cohort is a group of people who have access to a peermodel database. Each cohort has a unique name, and each person in the cohort has a unique identity. The cohort is the group of people who have access to the database, and the identity is the unique identifier for each person in the cohort.
 
-A peermodel database includes a default 'public' ring to which every user of the database belongs.
+A peermodel database includes a default 'public' cohort to which every user of the database belongs.
 
-A ring member can extend 'guest' access to other users. Guest access allows the guest to read the database, but not to write to it.
+A cohort member can extend 'guest' access to other users. Guest access allows the guest to read the database, but not to write to it.
 
-A ring member can invite a guest to join the ring. A majority of ring members must approve the invitation before the guest is added to the ring.
+A cohort member can invite a guest to join the cohort. A majority of cohort members must approve the invitation before the guest is added to the cohort.
 
 """
 
-class Ring(ABC):
+class Cohort(ABC):
 
     KeyExchange = defaultdict(lambda: defaultdict(Keysystem))
     
@@ -49,8 +52,8 @@ class Ring(ABC):
     # public API
     @classmethod
     @abstractmethod
-    def lookupRing(cls, identity, db):
-        return 
+    def lookupCohort(cls, identity, db):
+        return
 
     @property
     @abstractmethod
@@ -70,7 +73,7 @@ class Ring(ABC):
     @property
     def readers(self) -> Iterator[Keysystem]:
         return chain(self.members, self.guests)
-    
+
     @abstractmethod
     def generateRecordKey(self):
         pass
@@ -82,20 +85,190 @@ class Ring(ABC):
     
     
 
+class SimpleCohort(Cohort):
+    """Concrete implementation of Cohort using software keysystem."""
+
+    def __init__(self, cohort_id, founder_identity, members=None, guests=None, signing_key_der=None):
+        """Initialize a cohort.
+
+        Args:
+            cohort_id: Unique identifier for this cohort
+            founder_identity: Identity of the founder
+            members: List of member identities (default: [founder_identity])
+            guests: List of guest identities (default: [])
+            signing_key_der: Ed25519 private key for cohort signatures (default: generate new)
+        """
+        self.cohort_id = cohort_id
+        self.founder_identity = founder_identity
+        self._members = members or [founder_identity]
+        self._guests = guests or []
+        self._proposals = {}
+
+        if signing_key_der is None:
+            _, _, signing_key_der, _ = primitives.generate_keypair()
+        self.signing_key_der = signing_key_der
+
+        self._keysystem = SoftwareKeysystem(
+            founder_identity['x25519_private'],
+            founder_identity['x25519_public'],
+            founder_identity['ed25519_private'],
+            founder_identity['ed25519_public']
+        )
+        self._record_key = Fernet.generate_key()
+
+    @classmethod
+    def lookupCohort(cls, identity, db):
+        """Look up a cohort by identity (stub for Phase 2)."""
+        return None
+
+    @property
+    def keysystem(self) -> Keysystem:
+        """Return the keysystem for this cohort."""
+        return self._keysystem
+
+    @property
+    def guests(self) -> Iterator:
+        """Return iterator over guest identities."""
+        return iter(self._guests)
+
+    @property
+    def members(self) -> Iterator:
+        """Return iterator over member identities."""
+        return iter(self._members)
+
+    def generateRecordKey(self):
+        """Generate a new Fernet key for record encryption."""
+        return Fernet.generate_key()
+
+    @property
+    def signature(self):
+        """Compute signature over cohort metadata.
+
+        Returns:
+            bytes: Ed25519 signature of cohort_id
+        """
+        message = json.dumps({
+            'cohort_id': self.cohort_id,
+            'members': len(self._members),
+            'guests': len(self._guests)
+        }).encode('utf-8')
+        return primitives.sign_bytes(message, self.signing_key_der)
+
+    def addMember(self, member_identity):
+        """Add a member to the cohort."""
+        if member_identity not in self._members:
+            self._members.append(member_identity)
+
+    def removeMember(self, member_identity):
+        """Remove a member from the cohort."""
+        if member_identity in self._members:
+            self._members.remove(member_identity)
+
+    def create_add_member_proposal(self, subject_identity, proposer_identity):
+        """Create a proposal to add a new member."""
+        from peermodel.membership import MembershipProposal
+
+        # Check subject not already member
+        member_ids = [m['identity_id'] for m in self._members]
+        if subject_identity['identity_id'] in member_ids:
+            raise ValueError(f"{subject_identity['identity_id']} is already a member")
+
+        proposal = MembershipProposal(
+            cohort_id=self.cohort_id,
+            action="add",
+            subject_member_id=subject_identity['identity_id'],
+            subject_credential={
+                'x25519_public': subject_identity['x25519_public'],
+                'ed25519_public': subject_identity['ed25519_public']
+            },
+            proposed_by=proposer_identity['identity_id']
+        )
+        self._proposals[proposal.proposal_id] = proposal
+        return proposal
+
+    def create_expel_member_proposal(self, subject_identity, proposer_identity):
+        """Create a proposal to expel a member."""
+        from peermodel.membership import MembershipProposal
+
+        # Cannot expel founder
+        if subject_identity['identity_id'] == self.founder_identity['identity_id']:
+            raise ValueError("Cannot expel founder")
+
+        proposal = MembershipProposal(
+            cohort_id=self.cohort_id,
+            action="expel",
+            subject_member_id=subject_identity['identity_id'],
+            proposed_by=proposer_identity['identity_id']
+        )
+        self._proposals[proposal.proposal_id] = proposal
+        return proposal
+
+    def vote_on_proposal(self, proposal_id, voter_identity, approve):
+        """Vote on a membership proposal."""
+        from peermodel.membership import MembershipVote
+
+        # Check voter is member
+        voter_ids = [m['identity_id'] for m in self._members]
+        if voter_identity['identity_id'] not in voter_ids:
+            raise ValueError(f"{voter_identity['identity_id']} is not a member")
+
+        proposal = self._proposals[proposal_id]
+
+        # Create signed vote
+        message = json.dumps({
+            'proposal_id': proposal_id,
+            'approve': approve
+        }).encode('utf-8')
+        signature = primitives.sign_bytes(message, voter_identity['ed25519_private'])
+
+        vote = MembershipVote(
+            voter_identity_id=voter_identity['identity_id'],
+            proposal_id=proposal_id,
+            approve=approve,
+            signature=signature
+        )
+        proposal.add_vote(vote)
+        return proposal
+
+    def execute_proposal(self, proposal):
+        """Execute an approved proposal (add or expel member)."""
+        outcome = proposal.check_outcome(len(self._members))
+        if outcome != "approved":
+            raise ValueError(f"Cannot execute proposal with status: {outcome}")
+
+        if proposal.action == "add":
+            # Add member
+            new_member = {
+                'identity_id': proposal.subject_member_id,
+                'x25519_public': proposal.subject_credential['x25519_public'],
+                'ed25519_public': proposal.subject_credential['ed25519_public']
+            }
+            self.addMember(new_member)
+        elif proposal.action == "expel":
+            # Remove member
+            member_to_remove = next(
+                (m for m in self._members if m['identity_id'] == proposal.subject_member_id),
+                None
+            )
+            if member_to_remove:
+                self.removeMember(member_to_remove)
+
+    def regenerate(self):
+        """Regenerate cohort signing/encryption keys."""
+        _, _, new_signing_key_der, _ = primitives.generate_keypair()
+        self.signing_key_der = new_signing_key_der
+
+
 class Guest(ABC):
-    
 
     def invite(self):
         pass
 
-
     def review(self):
         pass
 
-
     def approve(self):
         pass
-
 
     def revoke(self):
         pass
