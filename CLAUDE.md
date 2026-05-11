@@ -69,6 +69,11 @@ prmdl init
 prmdl cohort create
 prmdl cohort list
 prmdl cohort invite <cohort> <identity>
+
+# Hardware token management (Phase 3)
+prmdl token list          # List available PIV cards / YubiKeys
+prmdl token init          # Initialize identity from hardware token
+prmdl token info          # Show details of connected hardware token
 ```
 
 ## Architecture
@@ -102,8 +107,11 @@ CLI (cli.py)
 
 **capabilities.py** — Identity and cryptographic key management
 - `IdentityManager`: Abstract base for identity providers (hardware tokens, keyring, etc.)
+  - `SoftwareIdentityManager`: Stores keypairs in `~/.peermodel/idconfig.json`
+  - `HardwareIdentityManager`: Wraps hardware token sessions (Phase 3)
 - `Keysystem`: Abstract base for encryption/decryption operations
-- `ECDSAKeysystem`: ECDSA-based key exchange implementation
+  - `SoftwareKeysystem`: Uses software X25519/Ed25519 keypairs (Phase 1)
+  - `HardwareKeysystem`: Uses PKCS#11 hardware tokens for decryption (Phase 3)
 - `UnauthorizedAccess`: Exception raised when decryption fails due to missing keys
 
 **delegation.py** — Cohort-based access control (NEW — part of cryptosystem architecture)
@@ -127,6 +135,20 @@ CLI (cli.py)
 - `build_cli()`: Factory function for creating application-specific CLIs
 - Cohort commands: create, invite, vote, approve, revoke, regenerate
 - CRUD commands: create, retrieve, update, delete, tag, publish
+- Token commands (Phase 3): list, init, info (hardware token management)
+
+**cohortcrypto/** — Hardware token cryptography (Phase 3+)
+- `hardware/detection.py`: Platform-specific PKCS#11 library detection
+- `hardware/piv.py`: PIV slot detection and selection
+- `hardware/mock.py`: Mock hardware for testing without real tokens
+- `exceptions.py`: Hardware-specific exceptions (PINError, TokenNotFoundError, etc.)
+
+**primitives.py** — Cryptographic primitives (Phase 1+)
+- `MemberCredential`: Dataclass for member identity and public keys
+- `generate_keypair()`: Generate X25519 and Ed25519 keypairs
+- `encrypt_to_recipient()`: Ephemeral ECDH + HKDF + Fernet
+- `decrypt_from_sender()`: ECDH recovery + HKDF + Fernet
+- `sign_bytes()` / `verify_bytes()`: Ed25519 signatures
 
 ### Key Concepts
 
@@ -180,7 +202,13 @@ Tests use pytest with hypothesis for property-based testing. Test fixtures are d
 
 - **Cryptosystem Architecture**: The repo is implementing a multi-institutional cohort-based cryptosystem. See `IMPLEMENTATION_CRYPTOSYSTEM_SPEC.md` for the complete specification, including hardware token support (PIV, YubiKey, PKCS#11), envelope encryption, and membership voting. The `delegation.py` and `iplddict.py` modules are key to this implementation.
   
-- **Hardware Token Support**: PIV/CAC/YubiKey integration is designed but not yet fully integrated into the ORM layer. The spec defines the API but production code is still being written.
+- **Hardware Token Support**: PIV/CAC/YubiKey integration via PKCS#11 (Phase 3 in progress)
+  - Phase 3A: Mock hardware infrastructure (✓ complete)
+  - Phase 3B: Hardware detection and PIV slot management (✓ complete)
+  - Phase 3C: Hardware keysystem and CLI integration (✓ complete)
+  - Phase 3E: Real PKCS#11 implementation (pending)
+  - Test with mock hardware: `COHORTCRYPTO_MOCK_HARDWARE=1`
+  - Test without hardware: All tests pass with mock mode enabled
 
 - **Legacy Code**: Commented imports of `js2py`, `libp2p`, `helia`, `orbitdb` are from earlier JS-based backend; safe to ignore or remove when refactoring.
 
