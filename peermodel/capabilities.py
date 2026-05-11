@@ -362,5 +362,19 @@ class HardwareIdentityManager(IdentityManager):
             'hardware_backed': True
         }
 
+    def dump(self):
+        """Save hardware identity configuration to file.
+
+        Persists only metadata (token label, serial, slot).
+        Never stores private keys (impossible with real hardware anyway).
+        """
+        config_dict = {
+            'identity_manager': self.__class__.__name__,
+            **vars(self.config)
+        }
+        makedirs(IdentityManager.home.parent, exist_ok=True)
+        with open(IdentityManager.home, 'w') as f:
+            json.dump(config_dict, f, indent=2)
+
 
 # Specific IdentityManager implementations

@@ -1,6 +1,6 @@
 import click
 from peermodel import with_database
-
+import json
 import logging
 
 
@@ -21,9 +21,65 @@ def cli():
     pass
 
 @cli.command()
-def init():
-    "Initialize your identity"
-    pass
+@click.option('--hardware', is_flag=True, help='Use hardware token instead of software keys')
+@click.option('--slot-id', type=int, default=None, help='PIV card slot ID (for multi-card systems)')
+@click.option('--identity-id', default=None, help='Human-readable name for this identity')
+@click.option('--pin', default=None, help='Hardware token PIN (prompts if not provided)')
+def init(hardware, slot_id, identity_id, pin):
+    "Initialize your identity (software or hardware token)"
+    from peermodel.capabilities import SoftwareIdentityManager, HardwareIdentityManager
+
+    if hardware:
+        if pin is None:
+            pin = click.prompt('Token PIN', hide_input=True)
+        try:
+            import cohortcrypto.hardware as hw
+            with hw.open_token(slot_id=slot_id, pin=pin) as session:
+                mgr = HardwareIdentityManager.from_token(session)
+                mgr.dump()
+                click.echo(f"✓ Hardware identity initialized from {session.token_label}")
+                click.echo(f"  Token: {session.token_serial}")
+                click.echo(f"  Slot: {session.slot_id}")
+        except ImportError:
+            click.echo("Error: cohortcrypto not available. Install with: pip install -e .[hardware]", err=True)
+        except Exception as e:
+            click.echo(f"Error: {e}", err=True)
+    else:
+        if identity_id is None:
+            identity_id = click.prompt('Identity ID', default='default')
+        try:
+            mgr = SoftwareIdentityManager.generateIdentity(identity_id)
+            click.echo(f"✓ Software identity initialized: {identity_id}")
+        except Exception as e:
+            click.echo(f"Error: {e}", err=True)
+
+
+@cli.command()
+@click.argument("action", type=click.Choice(['show', 'delete']))
+def identity(action):
+    "Manage your identity"
+    from peermodel.capabilities import IdentityManager
+
+    if action == 'show':
+        if not IdentityManager.home.exists():
+            click.echo("No identity configured. Run 'prmdl init' first.", err=True)
+            return
+        with open(IdentityManager.home, 'r') as f:
+            config = json.load(f)
+        click.echo(f"Identity Manager: {config.get('identity_manager')}")
+        if config['identity_manager'] == 'HardwareIdentityManager':
+            click.echo(f"  Token: {config.get('token_label')}")
+            click.echo(f"  Serial: {config.get('token_serial')}")
+            click.echo(f"  Slot: {config.get('slot_id')}")
+            click.echo(f"  PIV Slot: {config.get('piv_slot')}")
+        else:  # Software
+            click.echo(f"  Identity ID: {config.get('identity_id')}")
+    elif action == 'delete':
+        if IdentityManager.home.exists():
+            IdentityManager.home.unlink()
+            click.echo("✓ Identity deleted")
+        else:
+            click.echo("No identity configured")
 
 
 @cli.group()
@@ -94,6 +150,60 @@ def token_info():
         click.echo(f"  Slot: {tok.slot_id}")
     except ImportError:
         click.echo("Error: cohortcrypto not installed.", err=True)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+
+
+@token.command("select")
+@click.option('--slot-id', type=int, required=True, help='Token slot ID')
+def token_select(slot_id):
+    "Set active token for multi-token systems"
+    from peermodel.capabilities import IdentityManager
+
+    if not IdentityManager.home.exists():
+        click.echo("No identity configured. Run 'prmdl init' first.", err=True)
+        return
+
+    try:
+        with open(IdentityManager.home, 'r') as f:
+            config = json.load(f)
+
+        # Only update if hardware identity
+        if config.get('identity_manager') != 'HardwareIdentityManager':
+            click.echo("Can only select token for hardware identities", err=True)
+            return
+
+        config['slot_id'] = slot_id
+        with open(IdentityManager.home, 'w') as f:
+            json.dump(config, f, indent=2)
+        click.echo(f"✓ Active token set to slot {slot_id}")
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+
+
+@token.command("delete")
+@click.option('--token-serial', required=True, help='Token serial number')
+def token_delete(token_serial):
+    "Remove hardware token configuration"
+    from peermodel.capabilities import IdentityManager
+
+    if not IdentityManager.home.exists():
+        click.echo("No identity configured", err=True)
+        return
+
+    try:
+        with open(IdentityManager.home, 'r') as f:
+            config = json.load(f)
+
+        if config.get('identity_manager') != 'HardwareIdentityManager':
+            click.echo("Can only delete hardware token configs", err=True)
+            return
+
+        if config.get('token_serial') == token_serial:
+            IdentityManager.home.unlink()
+            click.echo(f"✓ Removed token {token_serial}")
+        else:
+            click.echo(f"Token {token_serial} not found in config", err=True)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
 
