@@ -202,13 +202,32 @@ Tests use pytest with hypothesis for property-based testing. Test fixtures are d
 
 - **Cryptosystem Architecture**: The repo is implementing a multi-institutional cohort-based cryptosystem. See `IMPLEMENTATION_CRYPTOSYSTEM_SPEC.md` for the complete specification, including hardware token support (PIV, YubiKey, PKCS#11), envelope encryption, and membership voting. The `delegation.py` and `iplddict.py` modules are key to this implementation.
   
-- **Hardware Token Support**: PIV/CAC/YubiKey integration via PKCS#11 (Phase 3 in progress)
+- **Hardware Token Support**: PIV/CAC/YubiKey integration via PKCS#11 (Phase 3 COMPLETE)
   - Phase 3A: Mock hardware infrastructure (✓ complete)
   - Phase 3B: Hardware detection and PIV slot management (✓ complete)
   - Phase 3C: Hardware keysystem and CLI integration (✓ complete)
-  - Phase 3E: Real PKCS#11 implementation (pending)
-  - Test with mock hardware: `COHORTCRYPTO_MOCK_HARDWARE=1`
-  - Test without hardware: All tests pass with mock mode enabled
+  - Phase 3D: CLI identity persistence and management (✓ complete)
+  - Phase 3E: Real PKCS#11 implementation (✓ complete)
+  
+  **CLI Commands** (Phase 3D):
+  - `prmdl init --hardware`: Initialize identity from hardware token
+  - `prmdl init --software`: Initialize software-based identity
+  - `prmdl identity show`: Display current identity
+  - `prmdl identity delete`: Remove identity configuration
+  - `prmdl token select --slot-id N`: Set active token for multi-token systems
+  - `prmdl token delete --token-serial S`: Remove hardware token configuration
+  
+  **Testing**:
+  - Mock hardware: `COHORTCRYPTO_MOCK_HARDWARE=1` (default for all tests)
+  - Real hardware: Unset env var and have PIV card/YubiKey connected
+  - Test with mock: All tests pass without requiring hardware
+  - Real hardware tests: Marked with `@pytest.mark.hardware` (skipped by default)
+  
+  **PKCS#11 Support**:
+  - `RealTokenSession` class wraps python-pkcs11 sessions
+  - `open_pkcs11_session()` opens real hardware tokens
+  - On-token signing and ECDH (private keys never exported)
+  - Transparent fallback to mock when hardware unavailable
 
 - **Legacy Code**: Commented imports of `js2py`, `libp2p`, `helia`, `orbitdb` are from earlier JS-based backend; safe to ignore or remove when refactoring.
 
