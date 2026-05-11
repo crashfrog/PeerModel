@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-PeerModel is a secure capabilities-based peer-to-peer ORM built on OrbitDB and IPFS. It provides encrypted, decentralized data storage with cohort-based access control and capability-based security. The system uses cryptographic keys for both identity management and access control, with support for hardware tokens (PIV cards, YubiKeys).
+PeerModel is a secure capabilities-based peer-to-peer ORM built on IPFS. It provides encrypted, decentralized data storage with cohort-based access control and capability-based security. The system uses cryptographic keys for both identity management and access control, with support for hardware tokens (PIV cards, YubiKeys).
 
 ## Development Commands
 
