@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Bash(gh issue view *)",
+      "Bash(gh pr view *)",
+      "Bash(gh issue list *)",
+      "Bash(gh pr list *)",
+      "Bash(gh api *)",
+      "Bash(gh issue create *)",
+      "Bash(gh issue edit *)",
+      "Bash(git status *)",
+      "Bash(git branch *)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(git checkout *)",
+      "Bash(git worktree *)",
+      "Bash(pytest *)",
+      "Bash(python -m pytest *)",
+      "Bash(make test)",
+      "Bash(make lint)",
+      "Bash(make format)",
+      "Bash(make type)",
+      "Bash(make coverage)",
+      "Bash(python -m flake8 *)",
+      "Bash(python -m black *)",
+      "Bash(python -m mypy *)",
+      "Bash(ruff *)",
+      "Edit",
+      "Write"
+    ]
+  }
+}
