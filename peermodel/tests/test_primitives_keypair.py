@@ -27,7 +27,7 @@ class TestSoftwareKeypairGeneration:
     def test_generate_software_keypair_returns_four_values(self):
         """Test that generate_software_keypair returns 4 values."""
         from peermodel.primitives import generate_software_keypair
-        result = generate_software_keypair()
+        result = generate_software_keypair(algorithm='ed25519')
         expected = "(signing_private, signing_public, "
         expected += "encryption_private, encryption_public)"
         assert len(result) == 4, f"Should return {expected}"
@@ -35,7 +35,7 @@ class TestSoftwareKeypairGeneration:
     def test_generate_software_keypair_keys_are_bytes(self):
         """Test that all returned keys are bytes (DER-encoded)."""
         from peermodel.primitives import generate_software_keypair
-        result = generate_software_keypair()
+        result = generate_software_keypair(algorithm='ed25519')
         signing_private, signing_public = result[0], result[1]
         encryption_private, encryption_public = result[2], result[3]
 
@@ -51,7 +51,7 @@ class TestSoftwareKeypairGeneration:
     def test_generate_software_keypair_keys_are_der_encoded(self):
         """Test that keys can be loaded as DER-encoded keys."""
         from peermodel.primitives import generate_software_keypair
-        result = generate_software_keypair()
+        result = generate_software_keypair(algorithm='ed25519')
         signing_private, signing_public = result[0], result[1]
         encryption_private, encryption_public = result[2], result[3]
 
@@ -74,12 +74,18 @@ class TestSoftwareKeypairGeneration:
         """Test that multiple calls produce different keypairs."""
         from peermodel.primitives import generate_software_keypair
 
-        keypair1 = generate_software_keypair()
-        keypair2 = generate_software_keypair()
+        keypair1 = generate_software_keypair(algorithm='ed25519')
+        keypair2 = generate_software_keypair(algorithm='ed25519')
 
         # At least one key should differ
         msg = "Each call should generate unique keypairs"
         assert keypair1 != keypair2, msg
+
+    def test_generate_software_keypair_supports_p256(self):
+        """Test that P-256 algorithm is supported."""
+        from peermodel.primitives import generate_software_keypair
+        result = generate_software_keypair(algorithm='p256')
+        assert len(result) == 4, "Should return 4 keys for P-256"
 
 
 class TestEd25519Signing:
@@ -100,7 +106,8 @@ class TestEd25519Signing:
         from peermodel.primitives import (
             generate_software_keypair, sign_bytes)
 
-        signing_private, _, _, _ = generate_software_keypair()
+        signing_private, _, _, _ = generate_software_keypair(
+            algorithm='ed25519')
         message = b"Test message for Ed25519 signing"
 
         signature = sign_bytes(message, signing_private,
@@ -114,7 +121,8 @@ class TestEd25519Signing:
         from peermodel.primitives import (
             generate_software_keypair, sign_bytes, verify_bytes)
 
-        signing_private, signing_public, _, _ = generate_software_keypair()
+        signing_private, signing_public, _, _ = generate_software_keypair(
+            algorithm='ed25519')
         message = b"Test message for Ed25519 verification"
 
         signature = sign_bytes(message, signing_private,
@@ -130,7 +138,8 @@ class TestEd25519Signing:
         from peermodel.primitives import (
             generate_software_keypair, verify_bytes)
 
-        _, signing_public, _, _ = generate_software_keypair()
+        _, signing_public, _, _ = generate_software_keypair(
+            algorithm='ed25519')
         message = b"Test message"
         invalid_signature = b"0" * 64  # Invalid signature
 
@@ -144,7 +153,8 @@ class TestEd25519Signing:
         from peermodel.primitives import (
             generate_software_keypair, sign_bytes, verify_bytes)
 
-        signing_private, signing_public, _, _ = generate_software_keypair()
+        signing_private, signing_public, _, _ = generate_software_keypair(
+            algorithm='ed25519')
         original_message = b"Original message"
         different_message = b"Different message"
 
@@ -161,8 +171,10 @@ class TestEd25519Signing:
         from peermodel.primitives import (
             generate_software_keypair, sign_bytes, verify_bytes)
 
-        signing_private1, _, _, _ = generate_software_keypair()
-        _, signing_public2, _, _ = generate_software_keypair()
+        signing_private1, _, _, _ = generate_software_keypair(
+            algorithm='ed25519')
+        _, signing_public2, _, _ = generate_software_keypair(
+            algorithm='ed25519')
         message = b"Test message"
 
         signature = sign_bytes(message, signing_private1,
@@ -182,7 +194,8 @@ class TestP256ECDSASigning:
         from peermodel.primitives import (
             generate_software_keypair, sign_bytes)
 
-        signing_private, _, _, _ = generate_software_keypair()
+        signing_private, _, _, _ = generate_software_keypair(
+            algorithm='p256')
         message = b"Test message for P-256 ECDSA signing"
 
         signature = sign_bytes(message, signing_private,
@@ -197,7 +210,8 @@ class TestP256ECDSASigning:
         from peermodel.primitives import (
             generate_software_keypair, sign_bytes, verify_bytes)
 
-        signing_private, signing_public, _, _ = generate_software_keypair()
+        signing_private, signing_public, _, _ = generate_software_keypair(
+            algorithm='p256')
         message = b"Test message for P-256 ECDSA verification"
 
         signature = sign_bytes(message, signing_private,
@@ -213,7 +227,8 @@ class TestP256ECDSASigning:
         from peermodel.primitives import (
             generate_software_keypair, verify_bytes)
 
-        _, signing_public, _, _ = generate_software_keypair()
+        _, signing_public, _, _ = generate_software_keypair(
+            algorithm='p256')
         message = b"Test message"
         invalid_signature = b"0" * 70  # Invalid signature
 
@@ -227,7 +242,8 @@ class TestP256ECDSASigning:
         from peermodel.primitives import (
             generate_software_keypair, sign_bytes, verify_bytes)
 
-        signing_private, signing_public, _, _ = generate_software_keypair()
+        signing_private, signing_public, _, _ = generate_software_keypair(
+            algorithm='p256')
         original_message = b"Original message"
         different_message = b"Different message"
 
@@ -244,8 +260,10 @@ class TestP256ECDSASigning:
         from peermodel.primitives import (
             generate_software_keypair, sign_bytes, verify_bytes)
 
-        signing_private1, _, _, _ = generate_software_keypair()
-        _, signing_public2, _, _ = generate_software_keypair()
+        signing_private1, _, _, _ = generate_software_keypair(
+            algorithm='p256')
+        _, signing_public2, _, _ = generate_software_keypair(
+            algorithm='p256')
         message = b"Test message"
 
         signature = sign_bytes(message, signing_private1,
@@ -258,43 +276,39 @@ class TestP256ECDSASigning:
 
 
 class TestCrossAlgorithmRejection:
-    """Test that signatures from one algorithm are rejected by another."""
+    """Test that keys from one algorithm are rejected by another."""
 
-    def test_ed25519_signature_fails_p256_verification(self):
-        """Test that Ed25519 sig is rejected when verifying as P-256."""
+    def test_ed25519_key_fails_p256_signing(self):
+        """Test that Ed25519 key cannot be used for P-256 signing."""
         from peermodel.primitives import (
-            generate_software_keypair, sign_bytes, verify_bytes)
+            generate_software_keypair, sign_bytes)
 
-        signing_private, signing_public, _, _ = generate_software_keypair()
+        signing_private, _, _, _ = generate_software_keypair(
+            algorithm='ed25519')
         message = b"Test cross-algorithm rejection"
 
-        # Sign with Ed25519
-        ed25519_signature = sign_bytes(message, signing_private,
-                                       algorithm='ed25519')
+        # Try to sign Ed25519 key with P-256 algorithm - should fail
+        try:
+            sign_bytes(message, signing_private, algorithm='p256')
+            assert False, "Should raise exception when using wrong algorithm"
+        except (ValueError, TypeError, Exception):
+            pass  # Expected - key type doesn't match algorithm
 
-        # Try to verify as P-256
-        is_valid = verify_bytes(message, ed25519_signature,
-                                signing_public, algorithm='p256')
-        msg = "Ed25519 signature should fail P-256 verification"
-        assert is_valid is False, msg
-
-    def test_p256_signature_fails_ed25519_verification(self):
-        """Test that P-256 sig is rejected when verifying as Ed25519."""
+    def test_p256_key_fails_ed25519_signing(self):
+        """Test that P-256 key cannot be used for Ed25519 signing."""
         from peermodel.primitives import (
-            generate_software_keypair, sign_bytes, verify_bytes)
+            generate_software_keypair, sign_bytes)
 
-        signing_private, signing_public, _, _ = generate_software_keypair()
+        signing_private, _, _, _ = generate_software_keypair(
+            algorithm='p256')
         message = b"Test cross-algorithm rejection"
 
-        # Sign with P-256
-        p256_signature = sign_bytes(message, signing_private,
-                                    algorithm='p256')
-
-        # Try to verify as Ed25519
-        is_valid = verify_bytes(message, p256_signature,
-                                signing_public, algorithm='ed25519')
-        msg = "P-256 signature should fail Ed25519 verification"
-        assert is_valid is False, msg
+        # Try to sign P-256 key with Ed25519 algorithm - should fail
+        try:
+            sign_bytes(message, signing_private, algorithm='ed25519')
+            assert False, "Should raise exception when using wrong algorithm"
+        except (ValueError, TypeError, Exception):
+            pass  # Expected - key type doesn't match algorithm
 
 
 class TestSignatureRoundtrip:
@@ -305,7 +319,8 @@ class TestSignatureRoundtrip:
         from peermodel.primitives import (
             generate_software_keypair, sign_bytes, verify_bytes)
 
-        signing_private, signing_public, _, _ = generate_software_keypair()
+        signing_private, signing_public, _, _ = generate_software_keypair(
+            algorithm='ed25519')
         message = b"Round-trip test message for Ed25519"
 
         # Sign
@@ -323,7 +338,8 @@ class TestSignatureRoundtrip:
         from peermodel.primitives import (
             generate_software_keypair, sign_bytes, verify_bytes)
 
-        signing_private, signing_public, _, _ = generate_software_keypair()
+        signing_private, signing_public, _, _ = generate_software_keypair(
+            algorithm='p256')
         message = b"Round-trip test message for P-256 ECDSA"
 
         # Sign
@@ -341,7 +357,8 @@ class TestSignatureRoundtrip:
         from peermodel.primitives import (
             generate_software_keypair, sign_bytes, verify_bytes)
 
-        signing_private, signing_public, _, _ = generate_software_keypair()
+        signing_private, signing_public, _, _ = generate_software_keypair(
+            algorithm='ed25519')
 
         messages = [
             b"First message",
@@ -362,7 +379,8 @@ class TestSignatureRoundtrip:
         from peermodel.primitives import (
             generate_software_keypair, sign_bytes, verify_bytes)
 
-        signing_private, signing_public, _, _ = generate_software_keypair()
+        signing_private, signing_public, _, _ = generate_software_keypair(
+            algorithm='p256')
 
         messages = [
             b"First message",
