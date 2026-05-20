@@ -91,3 +91,6 @@ dist: clean ## builds source and wheel package
 
 install: clean ## install the package to the active Python's site-packages
 	python setup.py install
+
+migration: ## create a new migration stub (usage: make migration FROM=1.0.0 TO=1.1.0)
+	python scripts/new_migration.py --from $(FROM) --to $(TO)
