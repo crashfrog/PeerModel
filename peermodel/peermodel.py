@@ -118,16 +118,37 @@ class DocumentObj:
 
     @classmethod
     def _from_storage(cls, db, id, rec):
+        from dataclasses import MISSING
+
         new_rec = dict()
+
+        # Process only fields that exist in the model
+        model_field_names = {f.name for f in fields(cls)}
+
         for name, value in rec.items():
+            # Skip fields that don't exist in the model (defensive against schema evolution)
+            if name not in model_field_names:
+                continue
+
             if val := db._is_reference(value):
                 new_rec[name] = db._retrieve_record(*val)
             else:
                 try:
-                    typename, id, subrecord = value
-                    new_rec[name] = DocumentObj.Meta._reg[typename]._from_storage(db, id, subrecord)
+                    typename, nested_id, subrecord = value
+                    new_rec[name] = DocumentObj.Meta._reg[typename]._from_storage(db, nested_id, subrecord)
                 except (TypeError, ValueError, KeyError):
                     new_rec[name] = value
+
+        # Fill in missing fields with their defaults
+        for field_obj in fields(cls):
+            if field_obj.name == "_id":
+                continue
+            if field_obj.name not in new_rec:
+                if field_obj.default is not MISSING:
+                    new_rec[field_obj.name] = field_obj.default
+                elif field_obj.default_factory is not MISSING:
+                    new_rec[field_obj.name] = field_obj.default_factory()
+
         try:
             obj = cls(**new_rec)
         except:
