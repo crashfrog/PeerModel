@@ -4,9 +4,10 @@ from contextlib import AbstractContextManager, AbstractAsyncContextManager, wrap
 from functools import wraps
 from collections import defaultdict
 from collections.abc import MutableMapping
-from dataclasses import dataclass, InitVar, field, fields, KW_ONLY
+from dataclasses import dataclass, InitVar, field, fields, KW_ONLY, MISSING
 import uuid
 import json
+import logging
 
 
 from peermodel.capabilities import IdentityManager
@@ -18,6 +19,7 @@ from cryptography.fernet import Fernet
 
 "Main peermodel module."
 
+logger = logging.getLogger(__name__)
 
 # libp2p = js2py.require('libp2p')
 # ipfs = js2py.require('helia')
@@ -118,20 +120,34 @@ class DocumentObj:
 
     @classmethod
     def _from_storage(cls, db, id, rec):
+        # Get the set of valid field names for this class
+        valid_fields = {f.name for f in fields(cls)}
+
         new_rec = dict()
         for name, value in rec.items():
+            # Ignore unknown fields (log at DEBUG level)
+            if name not in valid_fields:
+                logger.debug(f"Ignoring unknown field '{name}' when deserializing {cls.__name__}")
+                continue
+
             if val := db._is_reference(value):
                 new_rec[name] = db._retrieve_record(*val)
             else:
                 try:
-                    typename, id, subrecord = value
-                    new_rec[name] = DocumentObj.Meta._reg[typename]._from_storage(db, id, subrecord)
+                    typename, nested_id, subrecord = value
+                    new_rec[name] = DocumentObj.Meta._reg[typename]._from_storage(db, nested_id, subrecord)
                 except (TypeError, ValueError, KeyError):
                     new_rec[name] = value
-        try:
-            obj = cls(**new_rec)
-        except:
-            raise Exception(db, rec)
+
+        # For missing fields with defaults, add them from the field defaults
+        for f in fields(cls):
+            if f.name not in new_rec and f.name != "_id":
+                if f.default is not MISSING:
+                    new_rec[f.name] = f.default
+                elif f.default_factory is not MISSING:
+                    new_rec[f.name] = f.default_factory()
+
+        obj = cls(**new_rec)
         obj._id = id
         return obj
     
