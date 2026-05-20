@@ -107,5 +107,8 @@ ENV/
 # IDE settings
 .vscode/
 
+# Claude Code agent worktrees and configuration
+.claude/
+
 # Node
 node_modules
