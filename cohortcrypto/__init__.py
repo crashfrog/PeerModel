@@ -7,7 +7,9 @@ from .hardware import (
     generate_keys_on_token,
     TokenInfo,
     MockTokenSession,
-    PIVSlot
+    PIVSlot,
+    KeyInfo,
+    TokenSession
 )
 
 from .exceptions import (
@@ -34,6 +36,8 @@ __all__ = [
     'TokenInfo',
     'MockTokenSession',
     'PIVSlot',
+    'KeyInfo',
+    'TokenSession',
     'MemberCredential',
     'CohortCryptoError',
     'HardwareError',

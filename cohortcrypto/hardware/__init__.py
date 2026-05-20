@@ -4,7 +4,7 @@ import os
 from typing import List, Optional, ContextManager
 from contextlib import contextmanager
 
-from .mock import MockTokenSession, TokenInfo, PIVSlot, mock_enumerate_tokens
+from .mock import MockTokenSession, TokenInfo, PIVSlot, KeyInfo, TokenSession, mock_enumerate_tokens
 from ..exceptions import (
     TokenNotFoundError,
     PKCSLibraryNotFoundError,
@@ -21,7 +21,9 @@ __all__ = [
     'generate_keys_on_token',
     'TokenInfo',
     'MockTokenSession',
-    'PIVSlot'
+    'PIVSlot',
+    'KeyInfo',
+    'TokenSession'
 ]
 
 
