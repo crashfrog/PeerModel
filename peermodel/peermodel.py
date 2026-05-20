@@ -338,11 +338,48 @@ class App:
         return model
 
 
-    def indexed(self, model):
-        "Declare that the document is indexed by this field"
-        model._is_indexed = True
-        Index(model)
-        return model
+    def indexed(self, model_name_or_model, field_name=None):
+        """
+        Mark a field as indexed for database schema generation.
+
+        Can be called as:
+        - peer.indexed(model_class) - as a decorator (legacy)
+        - peer.indexed('ModelName', 'field_name') - mark specific field
+        """
+        # Handle decorator usage: @peer.indexed
+        if field_name is None and isinstance(model_name_or_model, type):
+            model = model_name_or_model
+            model._is_indexed = True
+            Index(model)
+            return model
+
+        # Handle API usage: peer.indexed('ModelName', 'field_name')
+        if isinstance(model_name_or_model, str) and isinstance(field_name, str):
+            model_name = model_name_or_model
+
+            # Get the model class from the registry
+            if model_name not in DocumentObj.Meta._reg:
+                msg = f"Model {model_name} not found in registry"
+                raise ValueError(msg)
+
+            model_class = DocumentObj.Meta._reg[model_name]
+
+            # Get the model fields to validate the field exists
+            model_fields = {f.name for f in fields(model_class)}
+            if field_name not in model_fields:
+                msg = f"Field {field_name} not found in model {model_name}"
+                raise ValueError(msg)
+
+            # Initialize the indexed fields set if needed
+            if not hasattr(model_class, '_peermodel_indexed_fields'):
+                model_class._peermodel_indexed_fields = set()
+
+            # Add this field to the indexed fields
+            model_class._peermodel_indexed_fields.add(field_name)
+            return
+
+        msg = "indexed() requires either (model_class) or (model_name: str, field_name: str)"
+        raise TypeError(msg)
 
 
 def with_database(func=None, dbtypeclass=PersistedCapabilitiesDatabase):
