@@ -39,7 +39,7 @@ class TestMigrateEagerDryRunBasics:
             repo.migrate_eager.assert_called_once()
         except (ImportError, AttributeError) as e:
             # Expected to fail - feature not implemented
-            pytest.skip(f"Feature not implemented: {e}")
+            pytest.fail(f"Feature not implemented: {e}", pytrace=False)
 
     def test_migrate_eager_returns_migration_result(self):
         """migrate_eager should return a MigrationResult object."""
@@ -63,7 +63,7 @@ class TestMigrateEagerDryRunBasics:
             assert result.total_records == 100
         except (ImportError, AttributeError) as e:
             # Expected to fail - feature not implemented
-            pytest.skip(f"Feature not implemented: {e}")
+            pytest.fail(f"Feature not implemented: {e}", pytrace=False)
 
     def test_migrate_eager_dry_run_flag_in_result(self):
         """MigrationResult should include dry_run flag."""
