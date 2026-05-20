@@ -4,9 +4,10 @@ from contextlib import AbstractContextManager, AbstractAsyncContextManager, wrap
 from functools import wraps
 from collections import defaultdict
 from collections.abc import MutableMapping
-from dataclasses import dataclass, InitVar, field, fields, KW_ONLY
+from dataclasses import dataclass, InitVar, field, fields, KW_ONLY, MISSING
 import uuid
 import json
+import logging
 
 
 from peermodel.capabilities import IdentityManager
@@ -18,6 +19,7 @@ from cryptography.fernet import Fernet
 
 "Main peermodel module."
 
+logger = logging.getLogger(__name__)
 
 # libp2p = js2py.require('libp2p')
 # ipfs = js2py.require('helia')
@@ -118,20 +120,34 @@ class DocumentObj:
 
     @classmethod
     def _from_storage(cls, db, id, rec):
+        # Get the set of valid field names for this class
+        valid_fields = {f.name for f in fields(cls)}
+
         new_rec = dict()
         for name, value in rec.items():
+            # Ignore unknown fields (log at DEBUG level)
+            if name not in valid_fields:
+                logger.debug(f"Ignoring unknown field '{name}' when deserializing {cls.__name__}")
+                continue
+
             if val := db._is_reference(value):
                 new_rec[name] = db._retrieve_record(*val)
             else:
                 try:
-                    typename, id, subrecord = value
-                    new_rec[name] = DocumentObj.Meta._reg[typename]._from_storage(db, id, subrecord)
+                    typename, nested_id, subrecord = value
+                    new_rec[name] = DocumentObj.Meta._reg[typename]._from_storage(db, nested_id, subrecord)
                 except (TypeError, ValueError, KeyError):
                     new_rec[name] = value
-        try:
-            obj = cls(**new_rec)
-        except:
-            raise Exception(db, rec)
+
+        # For missing fields with defaults, add them from the field defaults
+        for f in fields(cls):
+            if f.name not in new_rec and f.name != "_id":
+                if f.default is not MISSING:
+                    new_rec[f.name] = f.default
+                elif f.default_factory is not MISSING:
+                    new_rec[f.name] = f.default_factory()
+
+        obj = cls(**new_rec)
         obj._id = id
         return obj
     
@@ -338,11 +354,48 @@ class App:
         return model
 
 
-    def indexed(self, model):
-        "Declare that the document is indexed by this field"
-        model._is_indexed = True
-        Index(model)
-        return model
+    def indexed(self, model_name_or_model, field_name=None):
+        """
+        Mark a field as indexed for database schema generation.
+
+        Can be called as:
+        - peer.indexed(model_class) - as a decorator (legacy)
+        - peer.indexed('ModelName', 'field_name') - mark specific field
+        """
+        # Handle decorator usage: @peer.indexed
+        if field_name is None and isinstance(model_name_or_model, type):
+            model = model_name_or_model
+            model._is_indexed = True
+            Index(model)
+            return model
+
+        # Handle API usage: peer.indexed('ModelName', 'field_name')
+        if isinstance(model_name_or_model, str) and isinstance(field_name, str):
+            model_name = model_name_or_model
+
+            # Get the model class from the registry
+            if model_name not in DocumentObj.Meta._reg:
+                msg = f"Model {model_name} not found in registry"
+                raise ValueError(msg)
+
+            model_class = DocumentObj.Meta._reg[model_name]
+
+            # Get the model fields to validate the field exists
+            model_fields = {f.name for f in fields(model_class)}
+            if field_name not in model_fields:
+                msg = f"Field {field_name} not found in model {model_name}"
+                raise ValueError(msg)
+
+            # Initialize the indexed fields set if needed
+            if not hasattr(model_class, '_peermodel_indexed_fields'):
+                model_class._peermodel_indexed_fields = set()
+
+            # Add this field to the indexed fields
+            model_class._peermodel_indexed_fields.add(field_name)
+            return
+
+        msg = "indexed() requires either (model_class) or (model_name: str, field_name: str)"
+        raise TypeError(msg)
 
 
 def with_database(func=None, dbtypeclass=PersistedCapabilitiesDatabase):
