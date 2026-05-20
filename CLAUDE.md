@@ -198,6 +198,20 @@ Tests use pytest with hypothesis for property-based testing. Test fixtures are d
 
 **Membership proposals**: Test voting thresholds (majority >50%), signature verification, and forward secrecy on expulsion.
 
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues. Skills use the `gh` CLI to read/write. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout: `CONTEXT.md` + `docs/adr/` at repo root. See `docs/agents/domain.md`.
+
 ## Notes
 
 - **Cryptosystem Architecture**: The repo is implementing a multi-institutional cohort-based cryptosystem. See `IMPLEMENTATION_CRYPTOSYSTEM_SPEC.md` for the complete specification, including hardware token support (PIV, YubiKey, PKCS#11), envelope encryption, and membership voting. The `delegation.py` and `iplddict.py` modules are key to this implementation.
