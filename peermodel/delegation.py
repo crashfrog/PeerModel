@@ -103,6 +103,7 @@ class SimpleCohort(Cohort):
         self._members = members or [founder_identity]
         self._guests = guests or []
         self._proposals = {}
+        self._sequence_number = 0
 
         if signing_key_der is None:
             _, _, signing_key_der, _ = primitives.generate_keypair()
@@ -252,6 +253,72 @@ class SimpleCohort(Cohort):
             )
             if member_to_remove:
                 self.removeMember(member_to_remove)
+
+    def create_operation(self, op_type, record_type, record_id, payload, previous_head_cid, initiator):
+        """Create and sign an operation record.
+
+        Args:
+            op_type: Type of operation (insert, update, tombstone)
+            record_type: Type of document being operated on
+            record_id: ID of the record being operated on
+            payload: The operation data (None for tombstone operations)
+            previous_head_cid: CID of the previous operation (None for first)
+            initiator: Identity of the member initiating the operation
+
+        Returns:
+            OperationRecord: Signed operation record
+
+        Raises:
+            ValueError: If op_type is invalid
+        """
+        from peermodel.operations import OperationRecord, canonical_op_bytes
+        from datetime import datetime, timezone
+        from uuid import uuid4
+
+        # Validate required parameters
+        if initiator is None:
+            raise TypeError("initiator cannot be None")
+        if record_type is None:
+            raise ValueError("record_type cannot be None")
+        if record_id is None:
+            raise ValueError("record_id cannot be None")
+
+        # Validate op_type
+        valid_op_types = ["insert", "update", "tombstone"]
+        if op_type not in valid_op_types:
+            raise ValueError(f"Invalid op_type: {op_type}. Must be one of {valid_op_types}")
+
+        # Increment sequence number
+        self._sequence_number += 1
+
+        # Generate operation record with datetime timestamp
+        timestamp = datetime.now(timezone.utc)
+
+        op = OperationRecord(
+            op_id=str(uuid4()),
+            op_type=op_type,
+            cohort_id=self.cohort_id,
+            record_type=record_type,
+            record_id=record_id,
+            sequence_number=self._sequence_number,
+            payload=payload,
+            previous_head_cid=previous_head_cid,
+            timestamp=timestamp,
+            schema_version="1.0",
+            signature=b"",  # Placeholder, will be replaced
+            signing_algorithm="Ed25519"
+        )
+
+        # Sign the operation using canonical CBOR encoding
+        canonical_bytes = canonical_op_bytes(op)
+        signature = primitives.sign_bytes(canonical_bytes, self.signing_key_der)
+
+        # Create final operation with signature
+        op.signature = signature
+
+        return op
+
+
 
     def regenerate(self):
         """Regenerate cohort signing/encryption keys."""
