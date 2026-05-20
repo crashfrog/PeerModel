@@ -1,240 +1,242 @@
-"""Migration registry discovery and version graph traversal."""
+#!/usr/bin/env python
+
+"""Migration registry discovery and version graph traversal.
+
+Provides MigrationEngine for managing schema migrations across versions,
+including:
+- Loading migration registries from data model packages
+- Building version graphs from migration definitions
+- Finding migration paths using BFS
+- Applying migration transforms sequentially
+"""
 
 import importlib
-from collections import defaultdict, deque
-from typing import Dict, List, Tuple, Callable, Optional, Any
-
-# Exception Classes
+from collections import deque
+from typing import Dict, List, Tuple, Callable
 
 
+# Exception classes
 class MigrationError(Exception):
-    """Base exception for migration-related errors."""
-
+    """Base exception for migration errors."""
     pass
 
 
 class MissingMigrationError(MigrationError):
-    """Raised when no migration path exists for a version gap."""
-
-    pass
-
-
-class MigrationRegistryNotFoundError(MigrationError):
-    """Raised when a package's migration registry cannot be found."""
-
+    """Raised when no migration path exists between major versions."""
     pass
 
 
 class MigrationTransformError(MigrationError):
     """Raised when a migration transform function fails."""
-
     pass
 
 
-# Type definitions
-MigrationFunc = Callable[[str, Dict[str, Any]], Dict[str, Any]]
-VersionPair = Tuple[str, str]
-MigrationDict = Dict[VersionPair, MigrationFunc]
+class MigrationRegistryNotFoundError(MigrationError):
+    """Raised when a package's migration registry cannot be loaded."""
+    pass
+
+
+# Global cache for loaded engines
+_engine_cache: Dict[str, "MigrationEngine"] = {}
 
 
 class MigrationEngine:
-    """Migration engine for managing version transformations.
+    """Engine for managing and applying schema migrations.
 
-    Builds a version graph from a migrations registry and provides
-    utilities to find migration paths and apply transformations.
+    A MigrationEngine is initialized with a dictionary of migration functions:
+        migrations = {
+            ("1.0.0", "2.0.0"): migration_func,
+            ("2.0.0", "3.0.0"): migration_func,
+        }
+
+    The engine builds a directed graph of versions and provides methods to:
+    - Find the shortest migration path between versions (BFS)
+    - Apply migrations sequentially along a path
+    - Handle additive changes (minor/patch) vs breaking changes (major)
     """
 
-    def __init__(self, migrations: MigrationDict):
-        """Initialize migration engine with a migrations registry.
+    def __init__(self, migrations: Dict[Tuple[str, str], Callable]):
+        """Initialize migration engine with a registry of migrations.
 
         Args:
-            migrations: Dict mapping (from_version, to_version) tuples
-                       to migration functions.
+            migrations: Dict mapping (from_version, to_version) tuples to
+                       migration functions. Each function should have
+                       signature: func(record_type: str, record_dict: dict)
+                       -> dict
         """
         self.migrations = migrations
-        self._graph: Optional[Dict[str, List[str]]] = None
+        self.graph = self.build_version_graph()
 
     def build_version_graph(self) -> Dict[str, List[str]]:
-        """Build version graph from migration registry.
+        """Build directed graph from migration registry.
 
         Returns:
-            Adjacency list: {version: [reachable_versions, ...]}
+            Adjacency list mapping each version to list of reachable
+            versions. Example: {"1.0.0": ["1.1.0", "2.0.0"],
+            "1.1.0": ["2.0.0"]}
         """
-        if self._graph is not None:
-            return self._graph
+        graph: Dict[str, List[str]] = {}
 
-        graph: Dict[str, List[str]] = defaultdict(list)
-
-        for from_version, to_version in self.migrations.keys():
+        for (from_version, to_version) in self.migrations.keys():
+            if from_version not in graph:
+                graph[from_version] = []
             graph[from_version].append(to_version)
-            # Ensure to_version is in graph even if it has no outgoing edges
-            if to_version not in graph:
-                graph[to_version] = []
 
-        self._graph = dict(graph)
-        return self._graph
+        return graph
 
-    def _extract_major_version(self, version: str) -> int:
-        """Extract major version number from version string.
+    def find_path(self, from_version: str,
+                  to_version: str) -> List[Tuple[str, str]]:
+        """Find shortest migration path using BFS.
 
         Args:
-            version: Version string (e.g., "1.2.3")
+            from_version: Starting version
+            to_version: Target version
 
         Returns:
-            Major version number.
-        """
-        try:
-            major = int(version.split(".")[0])
-            return major
-        except (IndexError, ValueError):
-            return 0
-
-    def find_path(self, from_version: str, to_version: str) -> List[VersionPair]:
-        """Find shortest path between versions using BFS.
-
-        Uses breadth-first search to find the shortest path from
-        from_version to to_version through the migration graph.
-
-        Args:
-            from_version: Starting version.
-            to_version: Target version.
-
-        Returns:
-            List of (from, to) tuples representing migration steps.
-            Empty list if versions are equal or minor version bump
-            with no explicit migration.
+            List of (from, to) tuples representing each migration step.
+            Empty list if versions match or for additive changes with no
+            path.
 
         Raises:
-            MissingMigrationError: If major version gap with no path.
+            MissingMigrationError: If major version differs and no path
+                                   exists.
         """
-        # No migration needed if versions are equal
+        # No migration needed if versions match
         if from_version == to_version:
             return []
 
-        graph = self.build_version_graph()
-
         # BFS to find shortest path
-        queue: deque[Tuple[str, List[VersionPair]]] = deque([(from_version, [])])
+        queue = deque([(from_version, [])])
         visited = {from_version}
 
         while queue:
-            current, path = queue.popleft()
+            current_version, path = queue.popleft()
 
             # Check if we've reached the target
-            if current == to_version:
+            if current_version == to_version:
                 return path
 
             # Explore neighbors
-            if current in graph:
-                for neighbor in graph[current]:
-                    if neighbor not in visited:
-                        visited.add(neighbor)
-                        new_path = path + [(current, neighbor)]
-                        queue.append((neighbor, new_path))
+            if current_version in self.graph:
+                for next_version in self.graph[current_version]:
+                    if next_version not in visited:
+                        visited.add(next_version)
+                        new_path = path + [
+                            (current_version, next_version)
+                        ]
+                        queue.append((next_version, new_path))
 
-        # No path found. Check if it's a major version gap.
-        from_major = self._extract_major_version(from_version)
-        to_major = self._extract_major_version(to_version)
+        # No path found - check if it's a major version gap
+        from_major = self._get_major_version(from_version)
+        to_major = self._get_major_version(to_version)
 
         if from_major != to_major:
-            # Major version gap with no path - this is an error
             raise MissingMigrationError(
-                f"No migration path from {from_version} to {to_version}"
+                f"No migration path from {from_version} to {to_version} "
+                f"(major version gap: {from_major} -> {to_major})"
             )
 
-        # Minor/patch version bump with no migration - return empty list
-        # (additive changes don't require transformations)
+        # Minor/patch difference with no path - additive change,
+        # no transform needed
         return []
 
-    def apply(
-        self,
-        record_type: str,
-        record_dict: Dict[str, Any],
-        from_version: str,
-        to_version: str,
-    ) -> Dict[str, Any]:
-        """Apply migration transforms along the path.
-
-        Chains migration functions sequentially, passing the output
-        of each step to the next.
+    def apply(self, record_type: str, record_dict: dict,
+              from_version: str, to_version: str) -> dict:
+        """Apply migration transforms sequentially along the path.
 
         Args:
-            record_type: Type name of the record being migrated.
-            record_dict: Record data dict to transform.
-            from_version: Starting version.
-            to_version: Target version.
+            record_type: Type name of the record being migrated
+            record_dict: Record data to transform
+            from_version: Starting version
+            to_version: Target version
 
         Returns:
-            Transformed record dict.
+            Transformed record dict
 
         Raises:
-            MigrationTransformError: If any migration function fails.
+            MigrationTransformError: If any migration function fails
+            MissingMigrationError: If no path exists for major version gap
         """
+        # Find the migration path
         path = self.find_path(from_version, to_version)
 
-        result = record_dict
-        for from_ver, to_ver in path:
-            migration_func = self.migrations[(from_ver, to_ver)]
+        # If no path needed, return original record
+        if not path:
+            return record_dict
+
+        # Apply each migration step sequentially
+        current_record = record_dict
+        for step in path:
+            migration_func = self.migrations[step]
             try:
-                result = migration_func(record_type, result)
+                current_record = migration_func(record_type, current_record)
             except Exception as e:
                 raise MigrationTransformError(
-                    f"Migration {from_ver} -> {to_ver} failed: {str(e)}"
+                    f"Migration from {step[0]} to {step[1]} failed: {e}"
                 ) from e
 
-        return result
+        return current_record
 
+    @staticmethod
+    def _get_major_version(version: str) -> str:
+        """Extract major version component from version string.
 
-# Caching for loaded engines
-_engine_cache: Dict[str, MigrationEngine] = {}
+        Args:
+            version: Version string like "1.2.3"
+
+        Returns:
+            Major version component like "1"
+        """
+        return version.split('.')[0]
 
 
 def load_engine(package_name: str) -> MigrationEngine:
     """Load migration engine from a package's registry.
 
-    Imports {package_name}.migrations.registry and reads its MIGRATIONS dict,
-    then returns a MigrationEngine constructed from it.
+    Imports {package_name}.migrations.registry and reads the MIGRATIONS dict
+    to construct a MigrationEngine.
 
     Args:
-        package_name: Name of the package containing migrations.
+        package_name: Name of the data model package
 
     Returns:
-        MigrationEngine instance.
+        MigrationEngine instance initialized with package's migrations
 
     Raises:
-        MigrationRegistryNotFoundError: If package or registry not found.
+        MigrationRegistryNotFoundError: If package or registry not found
     """
     try:
-        # Import the registry module
-        registry_module = importlib.import_module(f"{package_name}.migrations.registry")
+        # Import the migrations.registry module
+        module_name = f"{package_name}.migrations.registry"
+        registry_module = importlib.import_module(module_name)
+
+        # Read the MIGRATIONS dict
+        if not hasattr(registry_module, "MIGRATIONS"):
+            raise MigrationRegistryNotFoundError(
+                f"Package '{package_name}' has migrations module but no "
+                f"MIGRATIONS dict"
+            )
+
+        migrations = registry_module.MIGRATIONS
+        return MigrationEngine(migrations)
+
     except ImportError as e:
         raise MigrationRegistryNotFoundError(
-            f"Could not load migrations registry for {package_name}: {str(e)}"
+            f"Could not load migration registry for package "
+            f"'{package_name}': {e}"
         ) from e
-
-    # Get MIGRATIONS dict
-    if not hasattr(registry_module, "MIGRATIONS"):
-        raise MigrationRegistryNotFoundError(
-            f"Package {package_name} has no MIGRATIONS attribute"
-        )
-
-    migrations = registry_module.MIGRATIONS
-    return MigrationEngine(migrations)
 
 
 def get_engine(package_name: str) -> MigrationEngine:
-    """Get or load a cached MigrationEngine for a package.
+    """Get cached migration engine for a package.
 
-    Caches loaded engines to avoid repeated imports.
+    Loads the engine on first call and caches it for subsequent calls.
 
     Args:
-        package_name: Name of the package containing migrations.
+        package_name: Name of the data model package
 
     Returns:
-        Cached or newly loaded MigrationEngine instance.
-
-    Raises:
-        MigrationRegistryNotFoundError: If package or registry not found.
+        Cached MigrationEngine instance
     """
     if package_name not in _engine_cache:
         _engine_cache[package_name] = load_engine(package_name)

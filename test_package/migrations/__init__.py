@@ -1,1 +1,1 @@
-"""Migrations module for test package."""
+"""Test package migrations module."""
