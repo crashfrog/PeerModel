@@ -336,13 +336,55 @@ class App:
         model._is_aggregate = True
         Aggregate(model)
         return model
+    def indexed(self, model_name, field_name=None):
+        """Mark a field as indexed for DDL schema generation.
 
+        Can be used as:
+        - decorator: @peer.indexed (deprecated, for backward compatibility)
+        - function call: peer.indexed('ModelName', 'field_name')
 
-    def indexed(self, model):
-        "Declare that the document is indexed by this field"
-        model._is_indexed = True
-        Index(model)
-        return model
+        Args:
+            model_name: Model class or name of model class
+            field_name: Name of field to index (None if used as decorator)
+        """
+        # Handle decorator usage: @peer.indexed on model class
+        if field_name is None and isinstance(model_name, type):
+            model_name._is_indexed = True
+            Index(model_name)
+            return model_name
+
+        # Handle function call usage: peer.indexed('ModelName', field)
+        if isinstance(model_name, str) and isinstance(field_name, str):
+            # Look up model class from registry
+            from peermodel.peermodel import DocumentObj
+            model_class = DocumentObj.Meta._reg.get(model_name)
+            if model_class is None:
+                msg = f"Model '{model_name}' not found in registry"
+                raise ValueError(msg)
+
+            # Verify field exists on model
+            try:
+                from dataclasses import fields
+                field_names = {f.name for f in fields(model_class)}
+            except (TypeError, AttributeError):
+                # Fallback to annotations if not a dataclass yet
+                annotations = getattr(model_class, '__annotations__', {})
+                field_names = annotations.keys()
+
+            if field_name not in field_names:
+                msg = (f"Field '{field_name}' not found on model "
+                       f"'{model_name}'")
+                raise KeyError(msg)
+
+            # Store indexed field metadata
+            if not hasattr(model_class, '_peermodel_indexed_fields'):
+                model_class._peermodel_indexed_fields = set()
+            model_class._peermodel_indexed_fields.add(field_name)
+            return
+
+        msg = ("indexed() requires either model_class (decorator) or "
+               "(model_name, field_name) arguments")
+        raise TypeError(msg)
 
 
 def with_database(func=None, dbtypeclass=PersistedCapabilitiesDatabase):
