@@ -1,6 +1,7 @@
 """Hardware token operations for CohortCrypto."""
 
 import os
+from dataclasses import dataclass
 from typing import List, Optional, ContextManager
 from contextlib import contextmanager
 
@@ -14,12 +15,55 @@ from ..exceptions import (
 )
 
 
+@dataclass
+class KeyInfo:
+    """Information about a cryptographic key on a hardware token.
+
+    Attributes:
+        algorithm: Key algorithm (ed25519, x25519, p256, rsa2048, etc.)
+        public_key: DER-encoded public key bytes
+        certificate: Optional X.509 certificate in DER format
+        piv_slot: Optional PIV slot where key is stored
+    """
+    algorithm: str
+    public_key: bytes
+    certificate: Optional[bytes] = None
+    piv_slot: Optional['PIVSlot'] = None
+
+
+@dataclass
+class TokenSession:
+    """Authenticated session with a hardware token.
+
+    Represents an open connection to a hardware token with cryptographic
+    capabilities for signing and key agreement.
+
+    Attributes:
+        token_type: Token type (YubiKey, PIV Card, etc.)
+        slot_id: PKCS#11 slot ID
+        signing_key_info: KeyInfo for signing key (9C slot typically)
+        encryption_key_info: KeyInfo for encryption key (9A slot typically)
+        supports_x25519: Token supports X25519 key agreement
+        supports_ed25519: Token supports Ed25519 signing
+        firmware_version: Token firmware version (optional)
+    """
+    token_type: str
+    slot_id: int
+    signing_key_info: KeyInfo
+    encryption_key_info: KeyInfo
+    supports_x25519: bool
+    supports_ed25519: bool
+    firmware_version: Optional[str] = None
+
+
 __all__ = [
     'enumerate_tokens',
     'open_token',
     'credential_from_token',
     'generate_keys_on_token',
     'TokenInfo',
+    'TokenSession',
+    'KeyInfo',
     'MockTokenSession',
     'PIVSlot'
 ]
