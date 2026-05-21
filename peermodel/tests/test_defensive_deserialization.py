@@ -9,10 +9,9 @@ These tests verify that DocumentObj._from_storage() tolerates schema evolution:
 """
 
 import pytest
-from dataclasses import dataclass, field
+from dataclasses import field
 
 import peermodel
-from peermodel import DocumentObj
 
 
 @pytest.fixture
