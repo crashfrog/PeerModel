@@ -1,834 +1,496 @@
-#!/usr/bin/env python
+"""RED tests for CBOR serialization of all CohortCrypto data structures.
 
-"""Tests for CBOR serialization of CohortCrypto data structures.
+These tests cover canonical CBOR serialization (RFC 7049 section 3.9) for:
+- MemberCredential
+- CohortIdentity
+- KeyBundle
+- CohortRecord
+- MembershipProposal
 
-Tests cover:
-- Serialization to canonical CBOR (RFC 7049 section 3.9)
-- Deserialization back to objects
-- Round-trip stability (serialize → deserialize → serialize yields identical bytes)
-- Canonical form stability (same object → same bytes)
-- Edge cases: nested structures, empty collections, null fields
-- Boundaries: large byte strings, deep nesting
+Tests are currently FAILING - serialization module doesn't exist yet.
+Implementation in issue #15.
 """
 
 import pytest
 from datetime import datetime
 
-import peermodel.primitives
-from peermodel.primitives import MemberCredential
-from peermodel.delegation import SimpleCohort
+# Import data structures
+from cohortcrypto import MemberCredential
 from peermodel.membership import MembershipProposal, MembershipVote
 
+# Import serialization functions (these will fail until implemented)
+from cohortcrypto.serialization import (
+    serialize_member_credential,
+    deserialize_member_credential,
+    serialize_cohort_identity,
+    deserialize_cohort_identity,
+    serialize_keybundle,
+    deserialize_keybundle,
+    serialize_record,
+    deserialize_record,
+    serialize_proposal,
+    deserialize_proposal,
+)
 
-# Fixtures for generating identities and credentials
-
-@pytest.fixture
-def alice_identity():
-    """Generate Alice's identity with keypairs."""
-    x25519_priv, x25519_pub, ed25519_priv, ed25519_pub = peermodel.primitives.generate_keypair()
-    return {
-        'identity_id': 'alice',
-        'x25519_private': x25519_priv,
-        'x25519_public': x25519_pub,
-        'ed25519_private': ed25519_priv,
-        'ed25519_public': ed25519_pub
-    }
-
-
-@pytest.fixture
-def bob_identity():
-    """Generate Bob's identity with keypairs."""
-    x25519_priv, x25519_pub, ed25519_priv, ed25519_pub = peermodel.primitives.generate_keypair()
-    return {
-        'identity_id': 'bob',
-        'x25519_private': x25519_priv,
-        'x25519_public': x25519_pub,
-        'ed25519_private': ed25519_priv,
-        'ed25519_public': ed25519_pub
-    }
+# Fixtures
 
 
 @pytest.fixture
-def alice_credential(alice_identity):
-    """Create a MemberCredential for Alice."""
+def member_credential():
+    """Create a test MemberCredential."""
     return MemberCredential(
-        member_id=alice_identity['identity_id'],
-        x25519_public=alice_identity['x25519_public'],
-        ed25519_public=alice_identity['ed25519_public'],
+        member_id="alice",
+        x25519_public=b"x" * 32,
+        ed25519_public=b"e" * 32,
         signing_algorithm="ed25519",
         encryption_algorithm="x25519",
         hardware_backed=False,
-        certificate_der=None
+        certificate_der=None,
     )
 
 
 @pytest.fixture
-def bob_credential(bob_identity):
-    """Create a MemberCredential for Bob."""
+def hardware_member_credential():
+    """Create a hardware-backed MemberCredential."""
     return MemberCredential(
-        member_id=bob_identity['identity_id'],
-        x25519_public=bob_identity['x25519_public'],
-        ed25519_public=bob_identity['ed25519_public'],
-        signing_algorithm="ed25519",
-        encryption_algorithm="x25519",
-        hardware_backed=False,
-        certificate_der=None
-    )
-
-
-@pytest.fixture
-def alice_credential_with_cert(alice_identity):
-    """Create a MemberCredential for Alice with hardware certificate."""
-    return MemberCredential(
-        member_id=alice_identity['identity_id'],
-        x25519_public=alice_identity['x25519_public'],
-        ed25519_public=alice_identity['ed25519_public'],
-        signing_algorithm="ed25519",
-        encryption_algorithm="x25519",
+        member_id="bob",
+        x25519_public=b"y" * 32,
+        ed25519_public=b"f" * 32,
+        signing_algorithm="p256_ecdsa",
+        encryption_algorithm="p256_ecdh",
         hardware_backed=True,
-        certificate_der=b'\x30\x82\x01\x00' + b'\x00' * 256  # Mock DER certificate
+        certificate_der=b"cert" * 10,
     )
 
 
 @pytest.fixture
-def test_cohort(alice_identity):
-    """Create a test cohort with Alice as founder."""
-    return SimpleCohort(
-        cohort_id='test_cohort',
-        founder_identity=alice_identity
+def cohort_identity():
+    """Create a test CohortIdentity (structure from spec)."""
+    # This will fail until CohortIdentity is implemented
+    from cohortcrypto.cohort import CohortIdentity
+
+    return CohortIdentity(
+        cohort_id="cohort-123",
+        signing_public_key=b"sign" * 8,
+        signing_algorithm="ed25519",
+        encryption_public_key=b"encr" * 8,
+        encryption_algorithm="x25519",
+        ipns_key_name="cohort-123-key",
+        created_at=datetime(2026, 5, 19, 12, 0, 0),
+        keybundle_cid="QmTest123",
     )
 
 
 @pytest.fixture
-def multi_member_cohort(alice_identity, bob_identity):
-    """Create a cohort with Alice and Bob as members."""
-    cohort = SimpleCohort(
-        cohort_id='multi_cohort',
-        founder_identity=alice_identity
+def key_bundle():
+    """Create a test KeyBundle (structure from spec)."""
+    from cohortcrypto.envelope import KeyBundle, KeyBundleEntry
+
+    entry1 = KeyBundleEntry(
+        member_id="alice",
+        encrypted_key_material=b"encrypted" * 4,
+        ephemeral_public_key_der=b"ephemeral" * 4,
+        nonce=b"nonce123",
+        tag=b"tag12345",
     )
-    cohort.addMember(bob_identity)
-    return cohort
+
+    entry2 = KeyBundleEntry(
+        member_id="bob",
+        encrypted_key_material=b"encrypted2" * 4,
+        ephemeral_public_key_der=b"ephemeral2" * 4,
+        nonce=b"nonce456",
+        tag=b"tag67890",
+    )
+
+    return KeyBundle(
+        cohort_id="cohort-123",
+        version=1,
+        signing_alg="ed25519",
+        encryption_alg="x25519",
+        entries=[entry1, entry2],
+    )
 
 
-# ===== MemberCredential CBOR Serialization Tests =====
+@pytest.fixture
+def cohort_record():
+    """Create a test CohortRecord (structure from spec)."""
+    from cohortcrypto.signing import CohortRecord
 
-class TestMemberCredentialCBORSerialization:
-    """Test CBOR serialization of MemberCredential structure."""
-
-    def test_member_credential_serialize_basic(self, alice_credential):
-        """Serialize basic MemberCredential to CBOR."""
-        from peermodel.primitives import serialize_to_cbor
-
-        cbor_bytes = serialize_to_cbor(alice_credential)
-        assert isinstance(cbor_bytes, bytes)
-        assert len(cbor_bytes) > 0
-
-    def test_member_credential_deserialize_basic(self, alice_credential):
-        """Deserialize CBOR back to MemberCredential."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        cbor_bytes = serialize_to_cbor(alice_credential)
-        deserialized = deserialize_from_cbor(cbor_bytes, MemberCredential)
-
-        assert isinstance(deserialized, MemberCredential)
-        assert deserialized.member_id == alice_credential.member_id
-
-    def test_member_credential_round_trip(self, alice_credential):
-        """Test round-trip serialization: object → CBOR → object."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        cbor_bytes = serialize_to_cbor(alice_credential)
-        deserialized = deserialize_from_cbor(cbor_bytes, MemberCredential)
-
-        assert deserialized.member_id == alice_credential.member_id
-        assert deserialized.x25519_public == alice_credential.x25519_public
-        assert deserialized.ed25519_public == alice_credential.ed25519_public
-        assert deserialized.signing_algorithm == alice_credential.signing_algorithm
-        assert deserialized.encryption_algorithm == alice_credential.encryption_algorithm
-        assert deserialized.hardware_backed == alice_credential.hardware_backed
-        assert deserialized.certificate_der == alice_credential.certificate_der
-
-    def test_member_credential_canonical_stability(self, alice_credential):
-        """Serialize same object twice → identical bytes (canonical form)."""
-        from peermodel.primitives import serialize_to_cbor
-
-        cbor_bytes1 = serialize_to_cbor(alice_credential)
-        cbor_bytes2 = serialize_to_cbor(alice_credential)
-
-        assert cbor_bytes1 == cbor_bytes2, "Canonical CBOR should produce identical bytes"
-
-    def test_member_credential_with_certificate(self, alice_credential_with_cert):
-        """Serialize and deserialize MemberCredential with hardware certificate."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        cbor_bytes = serialize_to_cbor(alice_credential_with_cert)
-        deserialized = deserialize_from_cbor(cbor_bytes, MemberCredential)
-
-        assert deserialized.hardware_backed is True
-        assert deserialized.certificate_der == alice_credential_with_cert.certificate_der
-
-    def test_member_credential_large_certificate(self, alice_credential):
-        """Serialize MemberCredential with large DER certificate (boundary test)."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        # Create credential with large certificate
-        large_cert = MemberCredential(
-            member_id=alice_credential.member_id,
-            x25519_public=alice_credential.x25519_public,
-            ed25519_public=alice_credential.ed25519_public,
-            hardware_backed=True,
-            certificate_der=b'\x30\x82' + b'\x00' * 4096  # 4KB certificate
-        )
-
-        cbor_bytes = serialize_to_cbor(large_cert)
-        deserialized = deserialize_from_cbor(cbor_bytes, MemberCredential)
-
-        assert len(deserialized.certificate_der) == len(large_cert.certificate_der)
-        assert deserialized.certificate_der == large_cert.certificate_der
-
-    def test_member_credential_null_certificate(self, alice_credential):
-        """Serialize MemberCredential with null certificate field."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        credential = MemberCredential(
-            member_id=alice_credential.member_id,
-            x25519_public=alice_credential.x25519_public,
-            ed25519_public=alice_credential.ed25519_public,
-            hardware_backed=False,
-            certificate_der=None
-        )
-
-        cbor_bytes = serialize_to_cbor(credential)
-        deserialized = deserialize_from_cbor(cbor_bytes, MemberCredential)
-
-        assert deserialized.certificate_der is None
+    return CohortRecord(
+        cohort_id="cohort-123",
+        record_id="record-456",
+        content_cid="QmContent123",
+        key_bundle_cid="QmKeyBundle456",
+        is_encrypted=True,
+        metadata={"type": "data", "version": 1},
+        signature=b"signature" * 8,
+        signing_algorithm="ed25519",
+        signed_at=datetime(2026, 5, 19, 12, 0, 0),
+        schema_version="1.0.0",
+    )
 
 
-# ===== KeyBundle CBOR Serialization Tests =====
+@pytest.fixture
+def membership_proposal():
+    """Create a test MembershipProposal with votes."""
+    proposal = MembershipProposal(
+        proposal_id="proposal-789",
+        cohort_id="cohort-123",
+        action="add",
+        subject_member_id="carol",
+        subject_credential={"member_id": "carol"},
+        proposed_by="alice",
+        proposed_at=datetime(2026, 5, 19, 12, 0, 0),
+        votes=[],
+    )
 
-class TestKeyBundleCBORSerialization:
-    """Test CBOR serialization of KeyBundle structure (from capabilities.py)."""
+    # Add some votes
+    vote1 = MembershipVote(
+        voter_identity_id="alice",
+        proposal_id="proposal-789",
+        approve=True,
+        signature=b"sig1" * 8,
+        voted_at=datetime(2026, 5, 19, 12, 1, 0),
+    )
 
-    def test_keybundle_serialize(self, alice_identity):
-        """Serialize KeyBundle to CBOR."""
-        from peermodel.primitives import serialize_to_cbor
+    vote2 = MembershipVote(
+        voter_identity_id="bob",
+        proposal_id="proposal-789",
+        approve=True,
+        signature=b"sig2" * 8,
+        voted_at=datetime(2026, 5, 19, 12, 2, 0),
+    )
 
-        # Create a KeyBundle-like structure
-        keybundle = {
-            'identity_id': alice_identity['identity_id'],
-            'x25519_public': alice_identity['x25519_public'],
-            'ed25519_public': alice_identity['ed25519_public'],
-            'x25519_private': alice_identity['x25519_private'],
-            'ed25519_private': alice_identity['ed25519_private'],
+    proposal.votes = [vote1, vote2]
+    return proposal
+
+
+# MemberCredential Serialization Tests
+
+
+def test_serialize_member_credential_returns_bytes(member_credential):
+    """serialize_member_credential returns bytes."""
+    result = serialize_member_credential(member_credential)
+    assert isinstance(result, bytes)
+
+
+def test_deserialize_member_credential_returns_object(member_credential):
+    """deserialize_member_credential returns MemberCredential."""
+    serialized = serialize_member_credential(member_credential)
+    result = deserialize_member_credential(serialized)
+    assert isinstance(result, MemberCredential)
+
+
+def test_member_credential_round_trip_preserves_fields(member_credential):
+    """Round-trip serialization preserves all MemberCredential fields."""
+    serialized = serialize_member_credential(member_credential)
+    result = deserialize_member_credential(serialized)
+
+    assert result.member_id == member_credential.member_id
+    assert result.x25519_public == member_credential.x25519_public
+    assert result.ed25519_public == member_credential.ed25519_public
+    assert result.signing_algorithm == member_credential.signing_algorithm
+    assert result.encryption_algorithm == member_credential.encryption_algorithm
+    assert result.hardware_backed == member_credential.hardware_backed
+    assert result.certificate_der == member_credential.certificate_der
+
+
+def test_member_credential_canonical_form_stable(member_credential):
+    """Same MemberCredential serializes to identical bytes (canonical form)."""
+    serialized1 = serialize_member_credential(member_credential)
+    serialized2 = serialize_member_credential(member_credential)
+    assert serialized1 == serialized2
+
+
+def test_hardware_member_credential_round_trip(hardware_member_credential):
+    """Hardware-backed MemberCredential round-trips correctly."""
+    serialized = serialize_member_credential(hardware_member_credential)
+    result = deserialize_member_credential(serialized)
+
+    assert result.hardware_backed is True
+    assert result.certificate_der == hardware_member_credential.certificate_der
+    assert result.signing_algorithm == "p256_ecdsa"
+    assert result.encryption_algorithm == "p256_ecdh"
+
+
+# CohortIdentity Serialization Tests
+
+
+def test_serialize_cohort_identity_returns_bytes(cohort_identity):
+    """serialize_cohort_identity returns bytes."""
+    result = serialize_cohort_identity(cohort_identity)
+    assert isinstance(result, bytes)
+
+
+def test_deserialize_cohort_identity_returns_object(cohort_identity):
+    """deserialize_cohort_identity returns CohortIdentity."""
+    from cohortcrypto.cohort import CohortIdentity
+
+    serialized = serialize_cohort_identity(cohort_identity)
+    result = deserialize_cohort_identity(serialized)
+    assert isinstance(result, CohortIdentity)
+
+
+def test_cohort_identity_round_trip_preserves_fields(cohort_identity):
+    """Round-trip serialization preserves all CohortIdentity fields."""
+    serialized = serialize_cohort_identity(cohort_identity)
+    result = deserialize_cohort_identity(serialized)
+
+    assert result.cohort_id == cohort_identity.cohort_id
+    assert result.signing_public_key == cohort_identity.signing_public_key
+    assert result.signing_algorithm == cohort_identity.signing_algorithm
+    assert result.encryption_public_key == cohort_identity.encryption_public_key
+    assert result.encryption_algorithm == cohort_identity.encryption_algorithm
+    assert result.ipns_key_name == cohort_identity.ipns_key_name
+    assert result.created_at == cohort_identity.created_at
+    assert result.keybundle_cid == cohort_identity.keybundle_cid
+
+
+def test_cohort_identity_canonical_form_stable(cohort_identity):
+    """Same CohortIdentity serializes to identical bytes (canonical form)."""
+    serialized1 = serialize_cohort_identity(cohort_identity)
+    serialized2 = serialize_cohort_identity(cohort_identity)
+    assert serialized1 == serialized2
+
+
+# KeyBundle Serialization Tests
+
+
+def test_serialize_keybundle_returns_bytes(key_bundle):
+    """serialize_keybundle returns bytes."""
+    result = serialize_keybundle(key_bundle)
+    assert isinstance(result, bytes)
+
+
+def test_deserialize_keybundle_returns_object(key_bundle):
+    """deserialize_keybundle returns KeyBundle."""
+    from cohortcrypto.envelope import KeyBundle
+
+    serialized = serialize_keybundle(key_bundle)
+    result = deserialize_keybundle(serialized)
+    assert isinstance(result, KeyBundle)
+
+
+def test_keybundle_round_trip_preserves_fields(key_bundle):
+    """Round-trip serialization preserves all KeyBundle fields."""
+    serialized = serialize_keybundle(key_bundle)
+    result = deserialize_keybundle(serialized)
+
+    assert result.cohort_id == key_bundle.cohort_id
+    assert result.version == key_bundle.version
+    assert result.signing_alg == key_bundle.signing_alg
+    assert result.encryption_alg == key_bundle.encryption_alg
+    assert len(result.entries) == len(key_bundle.entries)
+
+    # Check first entry
+    assert result.entries[0].member_id == key_bundle.entries[0].member_id
+    assert (
+        result.entries[0].encrypted_key_material
+        == key_bundle.entries[0].encrypted_key_material
+    )
+    assert (
+        result.entries[0].ephemeral_public_key_der
+        == key_bundle.entries[0].ephemeral_public_key_der
+    )
+    assert result.entries[0].nonce == key_bundle.entries[0].nonce
+    assert result.entries[0].tag == key_bundle.entries[0].tag
+
+
+def test_keybundle_canonical_form_stable(key_bundle):
+    """Same KeyBundle serializes to identical bytes (canonical form)."""
+    serialized1 = serialize_keybundle(key_bundle)
+    serialized2 = serialize_keybundle(key_bundle)
+    assert serialized1 == serialized2
+
+
+# CohortRecord Serialization Tests
+
+
+def test_serialize_record_returns_bytes(cohort_record):
+    """serialize_record returns bytes."""
+    result = serialize_record(cohort_record)
+    assert isinstance(result, bytes)
+
+
+def test_deserialize_record_returns_object(cohort_record):
+    """deserialize_record returns CohortRecord."""
+    from cohortcrypto.signing import CohortRecord
+
+    serialized = serialize_record(cohort_record)
+    result = deserialize_record(serialized)
+    assert isinstance(result, CohortRecord)
+
+
+def test_cohort_record_round_trip_preserves_fields(cohort_record):
+    """Round-trip serialization preserves all CohortRecord fields."""
+    serialized = serialize_record(cohort_record)
+    result = deserialize_record(serialized)
+
+    assert result.cohort_id == cohort_record.cohort_id
+    assert result.record_id == cohort_record.record_id
+    assert result.content_cid == cohort_record.content_cid
+    assert result.key_bundle_cid == cohort_record.key_bundle_cid
+    assert result.is_encrypted == cohort_record.is_encrypted
+    assert result.metadata == cohort_record.metadata
+    assert result.signature == cohort_record.signature
+    assert result.signing_algorithm == cohort_record.signing_algorithm
+    assert result.signed_at == cohort_record.signed_at
+    assert result.schema_version == cohort_record.schema_version
+
+
+def test_cohort_record_canonical_form_stable(cohort_record):
+    """Same CohortRecord serializes to identical bytes (canonical form)."""
+    serialized1 = serialize_record(cohort_record)
+    serialized2 = serialize_record(cohort_record)
+    assert serialized1 == serialized2
+
+
+def test_cohort_record_preserves_signature(cohort_record):
+    """Round-trip preserves signature bytes exactly."""
+    serialized = serialize_record(cohort_record)
+    result = deserialize_record(serialized)
+
+    assert result.signature == cohort_record.signature
+    assert len(result.signature) == len(cohort_record.signature)
+
+
+# MembershipProposal Serialization Tests
+
+
+def test_serialize_proposal_returns_bytes(membership_proposal):
+    """serialize_proposal returns bytes."""
+    result = serialize_proposal(membership_proposal)
+    assert isinstance(result, bytes)
+
+
+def test_deserialize_proposal_returns_object(membership_proposal):
+    """deserialize_proposal returns MembershipProposal."""
+    serialized = serialize_proposal(membership_proposal)
+    result = deserialize_proposal(serialized)
+    assert isinstance(result, MembershipProposal)
+
+
+def test_membership_proposal_round_trip_preserves_fields(membership_proposal):
+    """Round-trip serialization preserves all MembershipProposal fields."""
+    serialized = serialize_proposal(membership_proposal)
+    result = deserialize_proposal(serialized)
+
+    assert result.proposal_id == membership_proposal.proposal_id
+    assert result.cohort_id == membership_proposal.cohort_id
+    assert result.action == membership_proposal.action
+    assert result.subject_member_id == membership_proposal.subject_member_id
+    assert result.subject_credential == membership_proposal.subject_credential
+    assert result.proposed_by == membership_proposal.proposed_by
+    assert result.proposed_at == membership_proposal.proposed_at
+    assert len(result.votes) == len(membership_proposal.votes)
+
+
+def test_membership_proposal_preserves_votes(membership_proposal):
+    """Round-trip preserves all vote details."""
+    serialized = serialize_proposal(membership_proposal)
+    result = deserialize_proposal(serialized)
+
+    assert len(result.votes) == 2
+
+    # Check first vote
+    vote1 = result.votes[0]
+    assert vote1.voter_identity_id == "alice"
+    assert vote1.proposal_id == "proposal-789"
+    assert vote1.approve is True
+    assert vote1.signature == b"sig1" * 8
+
+    # Check second vote
+    vote2 = result.votes[1]
+    assert vote2.voter_identity_id == "bob"
+    assert vote2.approve is True
+    assert vote2.signature == b"sig2" * 8
+
+
+def test_membership_proposal_canonical_form_stable(membership_proposal):
+    """Same MembershipProposal serializes to identical bytes (canonical form)."""
+    serialized1 = serialize_proposal(membership_proposal)
+    serialized2 = serialize_proposal(membership_proposal)
+    assert serialized1 == serialized2
+
+
+# Canonical Form Stability Tests
+
+
+def test_canonical_form_field_order_independence():
+    """Canonical form is stable regardless of field construction order.
+
+    This tests that CBOR canonical encoding (RFC 7049 section 3.9) produces
+    identical output regardless of how the object was constructed.
+    """
+    # Create two MemberCredentials with fields set in different orders
+    cred1 = MemberCredential(
+        member_id="test",
+        x25519_public=b"x" * 32,
+        ed25519_public=b"e" * 32,
+        signing_algorithm="ed25519",
+        encryption_algorithm="x25519",
+        hardware_backed=False,
+        certificate_der=None,
+    )
+
+    # Construct with same values but via dict (simulating different construction path)
+    cred2 = MemberCredential(
+        **{
+            "certificate_der": None,
+            "hardware_backed": False,
+            "encryption_algorithm": "x25519",
+            "signing_algorithm": "ed25519",
+            "ed25519_public": b"e" * 32,
+            "x25519_public": b"x" * 32,
+            "member_id": "test",
         }
-
-        cbor_bytes = serialize_to_cbor(keybundle)
-        assert isinstance(cbor_bytes, bytes)
-        assert len(cbor_bytes) > 0
-
-    def test_keybundle_round_trip(self, alice_identity):
-        """Test round-trip serialization of KeyBundle."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        keybundle = {
-            'identity_id': alice_identity['identity_id'],
-            'x25519_public': alice_identity['x25519_public'],
-            'ed25519_public': alice_identity['ed25519_public'],
-            'x25519_private': alice_identity['x25519_private'],
-            'ed25519_private': alice_identity['ed25519_private'],
-        }
-
-        cbor_bytes = serialize_to_cbor(keybundle)
-        deserialized = deserialize_from_cbor(cbor_bytes, dict)
-
-        assert deserialized['identity_id'] == keybundle['identity_id']
-        assert deserialized['x25519_public'] == keybundle['x25519_public']
-        assert deserialized['ed25519_public'] == keybundle['ed25519_public']
-
-    def test_keybundle_canonical_stability(self, alice_identity):
-        """Serialize same KeyBundle twice → identical bytes."""
-        from peermodel.primitives import serialize_to_cbor
-
-        keybundle = {
-            'identity_id': alice_identity['identity_id'],
-            'x25519_public': alice_identity['x25519_public'],
-            'ed25519_public': alice_identity['ed25519_public'],
-        }
-
-        cbor_bytes1 = serialize_to_cbor(keybundle)
-        cbor_bytes2 = serialize_to_cbor(keybundle)
-
-        assert cbor_bytes1 == cbor_bytes2
-
-
-# ===== CohortRecord CBOR Serialization Tests =====
-
-class TestCohortRecordCBORSerialization:
-    """Test CBOR serialization of CohortRecord structure."""
-
-    def test_cohort_record_serialize(self):
-        """Serialize CohortRecord to CBOR."""
-        from peermodel.primitives import serialize_to_cbor
-
-        cohort_record = {
-            'cohort_id': 'test_cohort',
-            'founder_id': 'alice',
-            'members': ['alice', 'bob'],
-            'guests': ['charlie'],
-            'created_at': datetime.now().isoformat(),
-        }
-
-        cbor_bytes = serialize_to_cbor(cohort_record)
-        assert isinstance(cbor_bytes, bytes)
-        assert len(cbor_bytes) > 0
-
-    def test_cohort_record_round_trip(self):
-        """Test round-trip serialization of CohortRecord."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        cohort_record = {
-            'cohort_id': 'test_cohort',
-            'founder_id': 'alice',
-            'members': ['alice', 'bob'],
-            'guests': ['charlie'],
-            'created_at': datetime.now().isoformat(),
-        }
-
-        cbor_bytes = serialize_to_cbor(cohort_record)
-        deserialized = deserialize_from_cbor(cbor_bytes, dict)
-
-        assert deserialized['cohort_id'] == cohort_record['cohort_id']
-        assert deserialized['founder_id'] == cohort_record['founder_id']
-        assert set(deserialized['members']) == set(cohort_record['members'])
-        assert set(deserialized['guests']) == set(cohort_record['guests'])
-
-    def test_cohort_record_canonical_stability(self):
-        """Serialize same CohortRecord twice → identical bytes."""
-        from peermodel.primitives import serialize_to_cbor
-
-        cohort_record = {
-            'cohort_id': 'test_cohort',
-            'founder_id': 'alice',
-            'members': ['alice', 'bob'],
-            'guests': ['charlie'],
-        }
-
-        cbor_bytes1 = serialize_to_cbor(cohort_record)
-        cbor_bytes2 = serialize_to_cbor(cohort_record)
-
-        assert cbor_bytes1 == cbor_bytes2
-
-    def test_cohort_record_with_encrypted_keys(self):
-        """Serialize CohortRecord with encrypted member keys."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        cohort_record = {
-            'cohort_id': 'test_cohort',
-            'founder_id': 'alice',
-            'members': ['alice', 'bob'],
-            'encrypted_keys': {
-                'alice': b'\x00' * 64,
-                'bob': b'\x00' * 64,
-            }
-        }
-
-        cbor_bytes = serialize_to_cbor(cohort_record)
-        deserialized = deserialize_from_cbor(cbor_bytes, dict)
-
-        assert deserialized['encrypted_keys']['alice'] == cohort_record['encrypted_keys']['alice']
-        assert deserialized['encrypted_keys']['bob'] == cohort_record['encrypted_keys']['bob']
-
-
-# ===== MembershipProposal CBOR Serialization Tests =====
-
-class TestMembershipProposalCBORSerialization:
-    """Test CBOR serialization of MembershipProposal structure."""
-
-    def test_membership_proposal_serialize(self, bob_identity):
-        """Serialize MembershipProposal to CBOR."""
-        from peermodel.primitives import serialize_to_cbor
-
-        proposal = MembershipProposal(
-            proposal_id='prop-123',
-            cohort_id='test_cohort',
-            action='add',
-            subject_member_id=bob_identity['identity_id'],
-            subject_credential={
-                'x25519_public': bob_identity['x25519_public'],
-                'ed25519_public': bob_identity['ed25519_public']
-            },
-            proposed_by='alice',
-            proposed_at=datetime.now()
-        )
-
-        cbor_bytes = serialize_to_cbor(proposal)
-        assert isinstance(cbor_bytes, bytes)
-        assert len(cbor_bytes) > 0
-
-    def test_membership_proposal_deserialize(self, bob_identity):
-        """Deserialize CBOR back to MembershipProposal."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        proposal = MembershipProposal(
-            proposal_id='prop-123',
-            cohort_id='test_cohort',
-            action='add',
-            subject_member_id=bob_identity['identity_id'],
-            subject_credential={
-                'x25519_public': bob_identity['x25519_public'],
-                'ed25519_public': bob_identity['ed25519_public']
-            },
-            proposed_by='alice'
-        )
-
-        cbor_bytes = serialize_to_cbor(proposal)
-        deserialized = deserialize_from_cbor(cbor_bytes, MembershipProposal)
-
-        assert isinstance(deserialized, MembershipProposal)
-        assert deserialized.proposal_id == proposal.proposal_id
-        assert deserialized.cohort_id == proposal.cohort_id
-        assert deserialized.action == proposal.action
-
-    def test_membership_proposal_round_trip(self, bob_identity):
-        """Test round-trip serialization of MembershipProposal."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        proposal = MembershipProposal(
-            proposal_id='prop-123',
-            cohort_id='test_cohort',
-            action='add',
-            subject_member_id=bob_identity['identity_id'],
-            subject_credential={
-                'x25519_public': bob_identity['x25519_public'],
-                'ed25519_public': bob_identity['ed25519_public']
-            },
-            proposed_by='alice'
-        )
-
-        cbor_bytes = serialize_to_cbor(proposal)
-        deserialized = deserialize_from_cbor(cbor_bytes, MembershipProposal)
-
-        assert deserialized.subject_member_id == proposal.subject_member_id
-        assert deserialized.subject_credential == proposal.subject_credential
-        assert deserialized.proposed_by == proposal.proposed_by
-
-    def test_membership_proposal_canonical_stability(self, bob_identity):
-        """Serialize same MembershipProposal twice → identical bytes."""
-        from peermodel.primitives import serialize_to_cbor
-
-        proposal = MembershipProposal(
-            proposal_id='prop-123',
-            cohort_id='test_cohort',
-            action='add',
-            subject_member_id=bob_identity['identity_id'],
-            subject_credential={
-                'x25519_public': bob_identity['x25519_public'],
-                'ed25519_public': bob_identity['ed25519_public']
-            },
-            proposed_by='alice'
-        )
-
-        cbor_bytes1 = serialize_to_cbor(proposal)
-        cbor_bytes2 = serialize_to_cbor(proposal)
-
-        assert cbor_bytes1 == cbor_bytes2
-
-    def test_membership_proposal_with_votes(self, alice_identity, bob_identity):
-        """Serialize MembershipProposal with votes."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        vote = MembershipVote(
-            voter_identity_id=alice_identity['identity_id'],
-            proposal_id='prop-123',
-            approve=True,
-            signature=b'\x00' * 64
-        )
-
-        proposal = MembershipProposal(
-            proposal_id='prop-123',
-            cohort_id='test_cohort',
-            action='add',
-            subject_member_id=bob_identity['identity_id'],
-            subject_credential={
-                'x25519_public': bob_identity['x25519_public'],
-                'ed25519_public': bob_identity['ed25519_public']
-            },
-            proposed_by='alice',
-            votes=[vote]
-        )
-
-        cbor_bytes = serialize_to_cbor(proposal)
-        deserialized = deserialize_from_cbor(cbor_bytes, MembershipProposal)
-
-        assert len(deserialized.votes) == 1
-        assert deserialized.votes[0].voter_identity_id == vote.voter_identity_id
-        assert deserialized.votes[0].approve == vote.approve
-
-    def test_membership_proposal_expel_action(self, bob_identity):
-        """Serialize MembershipProposal with expel action."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        proposal = MembershipProposal(
-            proposal_id='prop-456',
-            cohort_id='test_cohort',
-            action='expel',
-            subject_member_id=bob_identity['identity_id'],
-            proposed_by='alice'
-        )
-
-        cbor_bytes = serialize_to_cbor(proposal)
-        deserialized = deserialize_from_cbor(cbor_bytes, MembershipProposal)
-
-        assert deserialized.action == 'expel'
-        assert deserialized.subject_credential is None
-
-
-# ===== MembershipVote CBOR Serialization Tests =====
-
-class TestMembershipVoteCBORSerialization:
-    """Test CBOR serialization of MembershipVote structure."""
-
-    def test_membership_vote_serialize(self, alice_identity):
-        """Serialize MembershipVote to CBOR."""
-        from peermodel.primitives import serialize_to_cbor
-
-        vote = MembershipVote(
-            voter_identity_id=alice_identity['identity_id'],
-            proposal_id='prop-123',
-            approve=True,
-            signature=b'\x00' * 64
-        )
-
-        cbor_bytes = serialize_to_cbor(vote)
-        assert isinstance(cbor_bytes, bytes)
-        assert len(cbor_bytes) > 0
-
-    def test_membership_vote_deserialize(self, alice_identity):
-        """Deserialize CBOR back to MembershipVote."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        vote = MembershipVote(
-            voter_identity_id=alice_identity['identity_id'],
-            proposal_id='prop-123',
-            approve=True,
-            signature=b'\x00' * 64
-        )
-
-        cbor_bytes = serialize_to_cbor(vote)
-        deserialized = deserialize_from_cbor(cbor_bytes, MembershipVote)
-
-        assert isinstance(deserialized, MembershipVote)
-        assert deserialized.voter_identity_id == vote.voter_identity_id
-
-    def test_membership_vote_round_trip(self, alice_identity):
-        """Test round-trip serialization of MembershipVote."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        vote = MembershipVote(
-            voter_identity_id=alice_identity['identity_id'],
-            proposal_id='prop-123',
-            approve=True,
-            signature=b'\x00' * 64
-        )
-
-        cbor_bytes = serialize_to_cbor(vote)
-        deserialized = deserialize_from_cbor(cbor_bytes, MembershipVote)
-
-        assert deserialized.voter_identity_id == vote.voter_identity_id
-        assert deserialized.proposal_id == vote.proposal_id
-        assert deserialized.approve == vote.approve
-        assert deserialized.signature == vote.signature
-
-    def test_membership_vote_canonical_stability(self, alice_identity):
-        """Serialize same MembershipVote twice → identical bytes."""
-        from peermodel.primitives import serialize_to_cbor
-
-        vote = MembershipVote(
-            voter_identity_id=alice_identity['identity_id'],
-            proposal_id='prop-123',
-            approve=True,
-            signature=b'\x00' * 64
-        )
-
-        cbor_bytes1 = serialize_to_cbor(vote)
-        cbor_bytes2 = serialize_to_cbor(vote)
-
-        assert cbor_bytes1 == cbor_bytes2
-
-    def test_membership_vote_approval_false(self, alice_identity):
-        """Serialize MembershipVote with approval=False."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        vote = MembershipVote(
-            voter_identity_id=alice_identity['identity_id'],
-            proposal_id='prop-123',
-            approve=False,
-            signature=b'\x00' * 64
-        )
-
-        cbor_bytes = serialize_to_cbor(vote)
-        deserialized = deserialize_from_cbor(cbor_bytes, MembershipVote)
-
-        assert deserialized.approve is False
-
-    def test_membership_vote_with_large_signature(self, alice_identity):
-        """Serialize MembershipVote with large signature (boundary test)."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        # Ed25519 signatures are 64 bytes, but test with larger
-        large_sig = b'\x00' * 256
-        vote = MembershipVote(
-            voter_identity_id=alice_identity['identity_id'],
-            proposal_id='prop-123',
-            approve=True,
-            signature=large_sig
-        )
-
-        cbor_bytes = serialize_to_cbor(vote)
-        deserialized = deserialize_from_cbor(cbor_bytes, MembershipVote)
-
-        assert deserialized.signature == large_sig
-
-
-# ===== Nested Structure CBOR Serialization Tests =====
-
-class TestNestedStructuresCBORSerialization:
-    """Test CBOR serialization of nested structures (edge cases)."""
-
-    def test_credential_in_proposal(self, alice_credential, bob_identity):
-        """Serialize MembershipProposal containing MemberCredential."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        proposal = MembershipProposal(
-            proposal_id='prop-123',
-            cohort_id='test_cohort',
-            action='add',
-            subject_member_id=bob_identity['identity_id'],
-            subject_credential={
-                'x25519_public': bob_identity['x25519_public'],
-                'ed25519_public': bob_identity['ed25519_public']
-            },
-            proposed_by='alice'
-        )
-
-        cbor_bytes = serialize_to_cbor(proposal)
-        deserialized = deserialize_from_cbor(cbor_bytes, MembershipProposal)
-
-        assert deserialized.subject_credential['x25519_public'] == bob_identity['x25519_public']
-
-    def test_nested_empty_lists(self):
-        """Serialize structure with empty nested lists."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        proposal = MembershipProposal(
-            proposal_id='prop-123',
-            cohort_id='test_cohort',
-            action='add',
-            subject_member_id='bob',
-            proposed_by='alice',
-            votes=[]  # Empty votes list
-        )
-
-        cbor_bytes = serialize_to_cbor(proposal)
-        deserialized = deserialize_from_cbor(cbor_bytes, MembershipProposal)
-
-        assert deserialized.votes == []
-
-    def test_nested_empty_dict(self):
-        """Serialize structure with empty nested dict."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        proposal = MembershipProposal(
-            proposal_id='prop-123',
-            cohort_id='test_cohort',
-            action='add',
-            subject_member_id='bob',
-            proposed_by='alice',
-            subject_credential={}  # Empty dict
-        )
-
-        cbor_bytes = serialize_to_cbor(proposal)
-        deserialized = deserialize_from_cbor(cbor_bytes, MembershipProposal)
-
-        assert deserialized.subject_credential == {}
-
-
-# ===== Canonical Form Tests (RFC 7049 Section 3.9) =====
-
-class TestCanonicalFormCBOR:
-    """Test RFC 7049 canonical CBOR encoding."""
-
-    def test_member_credential_differs_on_field_order_change(self, alice_credential):
-        """Verify canonical form handles field ordering correctly."""
-        from peermodel.primitives import serialize_to_cbor
-
-        # Both orderings should produce identical canonical form
-        cred1 = MemberCredential(
-            member_id='alice',
-            x25519_public=alice_credential.x25519_public,
-            ed25519_public=alice_credential.ed25519_public,
-            signing_algorithm='ed25519',
-            encryption_algorithm='x25519',
-            hardware_backed=False,
-            certificate_der=None
-        )
-
-        cred2 = MemberCredential(
-            member_id='alice',
-            ed25519_public=alice_credential.ed25519_public,
-            x25519_public=alice_credential.x25519_public,
-            encryption_algorithm='x25519',
-            signing_algorithm='ed25519',
-            certificate_der=None,
-            hardware_backed=False
-        )
-
-        cbor1 = serialize_to_cbor(cred1)
-        cbor2 = serialize_to_cbor(cred2)
-
-        # Canonical form should be identical regardless of construction order
-        assert cbor1 == cbor2
-
-    def test_dict_field_ordering_canonical(self):
-        """Verify dicts with different key insertion order produce same CBOR."""
-        from peermodel.primitives import serialize_to_cbor
-
-        dict1 = {
-            'x25519_public': b'\x00' * 32,
-            'ed25519_public': b'\x00' * 32,
-            'identity_id': 'alice'
-        }
-
-        dict2 = {
-            'identity_id': 'alice',
-            'ed25519_public': b'\x00' * 32,
-            'x25519_public': b'\x00' * 32,
-        }
-
-        cbor1 = serialize_to_cbor(dict1)
-        cbor2 = serialize_to_cbor(dict2)
-
-        assert cbor1 == cbor2
-
-    def test_integer_encoding_canonical(self):
-        """Verify integers use shortest canonical encoding."""
-        from peermodel.primitives import serialize_to_cbor
-
-        # Small integer
-        data_small = {'count': 5}
-        cbor_small = serialize_to_cbor(data_small)
-
-        # Large integer should use appropriate encoding
-        data_large = {'count': 1000000}
-        cbor_large = serialize_to_cbor(data_large)
-
-        # Both should be valid CBOR
-        assert isinstance(cbor_small, bytes)
-        assert isinstance(cbor_large, bytes)
-
-
-# ===== Large Scale / Boundary Tests =====
-
-class TestCBORBoundaries:
-    """Test CBOR serialization with boundary conditions."""
-
-    def test_large_byte_string_member_credential(self, alice_identity):
-        """Serialize credential with large DER certificate."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        large_der = b'\x30\x82' + b'\xaa' * 10000  # 10KB DER
-        credential = MemberCredential(
-            member_id=alice_identity['identity_id'],
-            x25519_public=alice_identity['x25519_public'],
-            ed25519_public=alice_identity['ed25519_public'],
-            hardware_backed=True,
-            certificate_der=large_der
-        )
-
-        cbor_bytes = serialize_to_cbor(credential)
-        deserialized = deserialize_from_cbor(cbor_bytes, MemberCredential)
-
-        assert len(deserialized.certificate_der) == len(large_der)
-
-    def test_many_votes_in_proposal(self, alice_identity):
-        """Serialize proposal with many votes."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        votes = []
-        for i in range(100):
-            vote = MembershipVote(
-                voter_identity_id=f'voter_{i}',
-                proposal_id='prop-123',
-                approve=(i % 2 == 0),
-                signature=b'\x00' * 64
-            )
-            votes.append(vote)
-
-        proposal = MembershipProposal(
-            proposal_id='prop-123',
-            cohort_id='test_cohort',
-            action='add',
-            subject_member_id='bob',
-            proposed_by='alice',
-            votes=votes
-        )
-
-        cbor_bytes = serialize_to_cbor(proposal)
-        deserialized = deserialize_from_cbor(cbor_bytes, MembershipProposal)
-
-        assert len(deserialized.votes) == 100
-
-    def test_deep_nested_dict(self):
-        """Serialize deeply nested dictionary structure."""
-        from peermodel.primitives import serialize_to_cbor, deserialize_from_cbor
-
-        # Build deep nesting
-        data = {'level_0': {'level_1': {'level_2': {'level_3': {'level_4': {'value': 42}}}}}}
-
-        cbor_bytes = serialize_to_cbor(data)
-        deserialized = deserialize_from_cbor(cbor_bytes, dict)
-
-        assert deserialized['level_0']['level_1']['level_2']['level_3']['level_4']['value'] == 42
-
-
-# ===== Signature/Signing Integration Tests =====
-
-class TestCBORSigningIntegration:
-    """Test that canonical CBOR is suitable for signatures."""
-
-    def test_canonical_bytes_are_signable(self, alice_identity):
-        """Verify canonical CBOR bytes can be signed."""
-        from peermodel.primitives import serialize_to_cbor, sign_bytes
-
-        credential = MemberCredential(
-            member_id=alice_identity['identity_id'],
-            x25519_public=alice_identity['x25519_public'],
-            ed25519_public=alice_identity['ed25519_public']
-        )
-
-        cbor_bytes = serialize_to_cbor(credential)
-
-        # Should be able to sign the CBOR bytes
-        signature = sign_bytes(cbor_bytes, alice_identity['ed25519_private'])
-
-        assert isinstance(signature, bytes)
-        assert len(signature) == 64
-
-    def test_canonical_deterministic_for_signatures(self, alice_identity):
-        """Verify same object always produces same canonical bytes for signature."""
-        from peermodel.primitives import serialize_to_cbor, sign_bytes
-
-        credential = MemberCredential(
-            member_id=alice_identity['identity_id'],
-            x25519_public=alice_identity['x25519_public'],
-            ed25519_public=alice_identity['ed25519_public']
-        )
-
-        cbor_bytes1 = serialize_to_cbor(credential)
-        cbor_bytes2 = serialize_to_cbor(credential)
-
-        sig1 = sign_bytes(cbor_bytes1, alice_identity['ed25519_private'])
-        sig2 = sign_bytes(cbor_bytes2, alice_identity['ed25519_private'])
-
-        # Same bytes should produce same signature
-        assert sig1 == sig2
+    )
+
+    serialized1 = serialize_member_credential(cred1)
+    serialized2 = serialize_member_credential(cred2)
+
+    assert (
+        serialized1 == serialized2
+    ), "Canonical form must be independent of field order"
+
+
+def test_canonical_form_multiple_serializations():
+    """Multiple serializations of the same object produce identical bytes."""
+    cred = MemberCredential(
+        member_id="stable",
+        x25519_public=b"x" * 32,
+        ed25519_public=b"e" * 32,
+        signing_algorithm="ed25519",
+        encryption_algorithm="x25519",
+        hardware_backed=False,
+        certificate_der=None,
+    )
+
+    # Serialize 5 times
+    serializations = [serialize_member_credential(cred) for _ in range(5)]
+
+    # All should be identical
+    first = serializations[0]
+    for s in serializations[1:]:
+        assert (
+            s == first
+        ), "Canonical form must be stable across multiple serializations"
+
+
+def test_canonical_form_deserialize_serialize_stable():
+    """Deserialize-then-serialize produces identical bytes (idempotent)."""
+    cred = MemberCredential(
+        member_id="idempotent",
+        x25519_public=b"x" * 32,
+        ed25519_public=b"e" * 32,
+        signing_algorithm="ed25519",
+        encryption_algorithm="x25519",
+        hardware_backed=False,
+        certificate_der=None,
+    )
+
+    serialized1 = serialize_member_credential(cred)
+    deserialized = deserialize_member_credential(serialized1)
+    serialized2 = serialize_member_credential(deserialized)
+
+    assert serialized1 == serialized2, "Deserialize-serialize must be idempotent"
