@@ -370,7 +370,8 @@ class App:
             return model
 
         # Handle API usage: peer.indexed('ModelName', 'field_name')
-        if isinstance(model_name_or_model, str) and isinstance(field_name, str):
+        if (isinstance(model_name_or_model, str) and
+                isinstance(field_name, str)):
             model_name = model_name_or_model
 
             # Get the model class from the registry

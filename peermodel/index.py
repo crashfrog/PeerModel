@@ -21,7 +21,8 @@ def get_sqlite_type(python_type):
     Map Python types to SQLite column types.
 
     Args:
-        python_type: A Python type (str, int, float, bool, dict, list, bytes, or typing hints)
+        python_type: A Python type (str, int, float, bool, dict, list,
+            bytes, or typing hints)
 
     Returns:
         SQLite type string (TEXT, INTEGER, REAL, BLOB)
@@ -33,7 +34,8 @@ def get_sqlite_type(python_type):
     # Handle typing hints like List[str], Dict[str, int]
     origin = get_origin(python_type)
     if origin is not None:
-        # For any generic type (List, Dict, Tuple, etc.), use BLOB for CBOR encoding
+        # For any generic type (List, Dict, Tuple, etc.), use BLOB
+        # for CBOR encoding
         return 'BLOB'
 
     # Handle basic types
@@ -58,7 +60,8 @@ def get_sqlite_type(python_type):
 
 def generate_ddl(model_class):
     """
-    Generate SQLite DDL (CREATE TABLE + CREATE INDEX statements) for a model class.
+    Generate SQLite DDL (CREATE TABLE + CREATE INDEX statements) for
+    a model class.
 
     Args:
         model_class: A dataclass model decorated with @peer.model
@@ -114,7 +117,10 @@ def generate_ddl(model_class):
         index_statements = []
         for field_name in sorted(indexed_fields):
             index_name = f"{model_name}_{field_name}_idx"
-            index_stmt = f"CREATE INDEX IF NOT EXISTS {index_name} ON {model_name} ({field_name});"
+            index_stmt = (
+                f"CREATE INDEX IF NOT EXISTS {index_name} ON "
+                f"{model_name} ({field_name});"
+            )
             index_statements.append(index_stmt)
 
         if index_statements:
