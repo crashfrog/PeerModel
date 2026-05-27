@@ -8,6 +8,44 @@ import peermodel.primitives as primitives
 from ..exceptions import PINError
 
 
+@dataclass
+class KeyInfo:
+    """Information about a cryptographic key on a hardware token.
+
+    Attributes:
+        algorithm: Key algorithm (e.g., "ed25519", "x25519", "p256", "p384")
+        public_key: DER-encoded public key bytes
+        certificate: Optional X.509 DER certificate bytes
+        piv_slot: Optional PIV slot identifier (e.g., "9A", "9C")
+    """
+    algorithm: str
+    public_key: bytes
+    certificate: Optional[bytes] = None
+    piv_slot: Optional[str] = None
+
+
+@dataclass
+class TokenSession:
+    """Represents an open session with a hardware token.
+
+    Attributes:
+        token_type: Type of token (e.g., "piv", "yubikey", "pkcs11_generic")
+        slot_id: PKCS#11 slot ID where token is installed
+        signing_key_info: KeyInfo for the signing key
+        encryption_key_info: KeyInfo for the encryption key
+        supports_x25519: Whether token supports X25519 encryption
+        supports_ed25519: Whether token supports Ed25519 signing
+        firmware_version: Token firmware version string (optional)
+    """
+    token_type: str
+    slot_id: int
+    signing_key_info: KeyInfo
+    encryption_key_info: KeyInfo
+    supports_x25519: bool
+    supports_ed25519: bool
+    firmware_version: Optional[str] = None
+
+
 class PIVSlot(Enum):
     """PIV card slot identifiers."""
     AUTO = "auto"
