@@ -26,3 +26,8 @@ class KeyGenerationError(PeerModelCryptoError):
 class SignatureVerificationError(PeerModelCryptoError):
     """Raised when signature verification fails."""
     pass
+
+
+class SchemaMismatchError(Exception):
+    """Raised when SQLite schema doesn't match expected model schema."""
+    pass

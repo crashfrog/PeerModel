@@ -2,6 +2,12 @@
 
 from typing import get_origin
 from dataclasses import fields as dataclass_fields
+from pathlib import Path
+
+from peermodel.exceptions import SchemaMismatchError
+
+
+__all__ = ['SYSTEM_COLUMNS', 'get_sqlite_type', 'generate_ddl', 'IndexDB', 'SchemaMismatchError']
 
 
 # System columns that appear in every indexed table
@@ -127,3 +133,50 @@ def generate_ddl(model_class):
             ddl = ddl + "\n\n" + "\n".join(index_statements)
 
     return ddl
+
+
+class IndexDB:
+    """
+    Manages the SQLite index for one or more record types within a cohort.
+
+    The database file lives at the configured path (e.g., ~/.peermodel/<cohort_id>/index.db).
+    One IndexDB instance is shared across all record types for a cohort.
+    Each record type gets its own table, named by the record type.
+    A shared _node_state table holds NodeState rows.
+    """
+
+    def __init__(self, db_path: Path):
+        """
+        Initialize IndexDB with a database path.
+
+        Args:
+            db_path: Path to the SQLite database file
+        """
+        self.db_path = db_path
+        # Ensure parent directory exists
+        if not self.db_path.parent.exists():
+            raise FileNotFoundError(f"Directory does not exist: {self.db_path.parent}")
+
+    def ensure_schema(self, model_class: type) -> None:
+        """
+        Create or verify the SQLite schema for a DocumentObj subclass.
+
+        Creates:
+          - Record table named after record_type with columns for each annotated field
+          - System columns: _record_id, _op_id, _sequence, _timestamp, _head_cid,
+            _tombstoned, _schema_version
+          - CREATE INDEX on each field decorated with @indexed
+          - CREATE INDEX on _tombstoned (for live-record filtering)
+          - _node_state table if not exists
+
+        Idempotent: safe to call on an existing database.
+        Raises SchemaMismatchError if the existing table has incompatible
+        columns (different types or missing non-nullable columns).
+
+        Args:
+            model_class: A dataclass model decorated with @peer.model
+
+        Raises:
+            SchemaMismatchError: If existing schema doesn't match expected schema
+        """
+        raise NotImplementedError("IndexDB.ensure_schema() not implemented yet (Issue #19)")
