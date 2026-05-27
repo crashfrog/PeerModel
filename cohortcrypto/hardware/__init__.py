@@ -1,18 +1,15 @@
 """Hardware token operations for CohortCrypto."""
 
 import os
-from typing import List, Optional, ContextManager
+from typing import List, Optional, ContextManager, TYPE_CHECKING
 from contextlib import contextmanager
+
+if TYPE_CHECKING:
+    from ..primitives import MemberCredential
 
 from .mock import MockTokenSession, TokenInfo, PIVSlot, mock_enumerate_tokens
 from .interfaces import KeyInfo, TokenSession
-from ..exceptions import (
-    TokenNotFoundError,
-    PKCSLibraryNotFoundError,
-    PINError,
-    HardwareCapabilityError,
-    PIVSlotError
-)
+from ..exceptions import TokenNotFoundError
 
 
 __all__ = [
@@ -85,7 +82,16 @@ def open_token(
         if pin is None:
             pin = "123456"
 
-        session = MockTokenSession.create(piv_slot=piv_slot)
+        # Validate slot_id if specified
+        if slot_id is not None:
+            available_tokens = enumerate_tokens()
+            available_slot_ids = [token.slot_id for token in available_tokens]
+            if slot_id not in available_slot_ids:
+                raise TokenNotFoundError(
+                    f"Token at slot {slot_id} not found. Available slots: {available_slot_ids}"
+                )
+
+        session = MockTokenSession.create(piv_slot=piv_slot, slot_id=slot_id or 0)
         try:
             session.authenticate(pin)
             yield session
