@@ -1,6 +1,12 @@
-"""CohortCrypto: Hardware-backed cryptography for PeerModel cohorts."""
+"""CohortCrypto compatibility layer for peermodel package.
 
-from .hardware import (
+This module re-exports the root-level cohortcrypto package for backwards
+compatibility with tests that expect it under the peermodel package.
+"""
+
+# Re-export everything from the root cohortcrypto module
+from cohortcrypto import *  # noqa: F401, F403
+from cohortcrypto import (
     enumerate_tokens,
     open_token,
     credential_from_token,
@@ -9,10 +15,8 @@ from .hardware import (
     MockTokenSession,
     PIVSlot,
     KeyInfo,
-    TokenSession
-)
-
-from .exceptions import (
+    TokenSession,
+    MemberCredential,
     CohortCryptoError,
     HardwareError,
     TokenNotFoundError,
@@ -23,10 +27,8 @@ from .exceptions import (
     SlotOccupiedError,
     SessionExpiredError,
     DecryptionError,
-    NotAuthorizedError
+    NotAuthorizedError,
 )
-
-from .primitives import MemberCredential
 
 __all__ = [
     'enumerate_tokens',
@@ -49,7 +51,5 @@ __all__ = [
     'SlotOccupiedError',
     'SessionExpiredError',
     'DecryptionError',
-    'NotAuthorizedError'
+    'NotAuthorizedError',
 ]
-
-__version__ = '0.3.0'
