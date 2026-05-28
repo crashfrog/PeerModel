@@ -105,8 +105,16 @@ class SimpleCohort(Cohort):
         self._proposals = {}
         self._sequence_number = 0
 
+        # Generate cohort keypair (X25519 for encryption, Ed25519 for signing)
+        cohort_x25519_priv, cohort_x25519_pub, cohort_ed25519_priv, cohort_ed25519_pub = primitives.generate_keypair()
+        self.cohort_x25519_private = cohort_x25519_priv
+        self.cohort_x25519_public = cohort_x25519_pub
+        self.cohort_ed25519_private = cohort_ed25519_priv
+        self.cohort_ed25519_public = cohort_ed25519_pub
+
+        # Use provided signing_key_der if given, otherwise use generated cohort Ed25519 key
         if signing_key_der is None:
-            _, _, signing_key_der, _ = primitives.generate_keypair()
+            signing_key_der = cohort_ed25519_priv
         self.signing_key_der = signing_key_der
 
         self._keysystem = SoftwareKeysystem(
@@ -140,6 +148,54 @@ class SimpleCohort(Cohort):
     def generateRecordKey(self):
         """Generate a new Fernet key for record encryption."""
         return Fernet.generate_key()
+
+    def get_cohort_public_keys(self):
+        """Get cohort public keys for distribution to members.
+
+        Returns:
+            dict: Dictionary with 'x25519_public' and 'ed25519_public' keys
+        """
+        return {
+            'x25519_public': self.cohort_x25519_public,
+            'ed25519_public': self.cohort_ed25519_public
+        }
+
+    def sign_cohort_message(self, message):
+        """Sign a message using cohort's Ed25519 key.
+
+        Args:
+            message: bytes to sign
+
+        Returns:
+            bytes: Ed25519 signature (64 bytes)
+        """
+        return primitives.sign_bytes(message, self.cohort_ed25519_private, algorithm='ed25519')
+
+    def encrypt_for_member(self, plaintext, member_x25519_public_key_der):
+        """Encrypt data for a member using cohort encryption key.
+
+        Args:
+            plaintext: bytes to encrypt
+            member_x25519_public_key_der: DER-encoded X25519 public key of member
+
+        Returns:
+            tuple: (ciphertext, salt, tag, ephemeral_public_key) - result of encrypt_to_recipient
+        """
+        return primitives.encrypt_to_recipient(plaintext, member_x25519_public_key_der)
+
+    def regenerate_cohort_keypair(self):
+        """Regenerate cohort keypair for forward secrecy.
+
+        Generates new X25519 and Ed25519 keypairs for the cohort.
+        This invalidates all previously encrypted material and signatures.
+        """
+        cohort_x25519_priv, cohort_x25519_pub, cohort_ed25519_priv, cohort_ed25519_pub = primitives.generate_keypair()
+        self.cohort_x25519_private = cohort_x25519_priv
+        self.cohort_x25519_public = cohort_x25519_pub
+        self.cohort_ed25519_private = cohort_ed25519_priv
+        self.cohort_ed25519_public = cohort_ed25519_pub
+        # Update signing_key_der to use new cohort key
+        self.signing_key_der = cohort_ed25519_priv
 
     @property
     def signature(self):
@@ -322,8 +378,7 @@ class SimpleCohort(Cohort):
 
     def regenerate(self):
         """Regenerate cohort signing/encryption keys."""
-        _, _, new_signing_key_der, _ = primitives.generate_keypair()
-        self.signing_key_der = new_signing_key_der
+        self.regenerate_cohort_keypair()
 
 
 class Guest(ABC):
