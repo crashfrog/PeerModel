@@ -3,7 +3,7 @@
 import os
 import platform
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from ..exceptions import PKCSLibraryNotFoundError
 from .mock import TokenInfo
@@ -29,6 +29,59 @@ PKCS11_SEARCH_PATHS = {
 }
 
 
+def find_all_pkcs11_libraries() -> List[str]:
+    """Find all available PKCS#11 libraries on system.
+
+    Checks:
+    1. COHORTCRYPTO_PKCS11_PATH environment variable (colon-separated paths)
+       - Env var paths are checked with os.path.exists to validate
+    2. Platform-specific standard paths
+       - System paths are verified to exist before returning
+
+    Returns:
+        List of paths to available PKCS#11 libraries (deduplicated)
+
+    Handles:
+    - Permission errors when checking paths
+    - Missing libraries (returns empty list)
+    - Path deduplication
+    """
+    found_libraries = []
+    seen_paths = set()
+
+    # Check environment variable first - user-specified paths are checked with os.path.exists
+    # (not Path.exists() so they work correctly even when Path is mocked)
+    if env_paths_str := os.environ.get('COHORTCRYPTO_PKCS11_PATH'):
+        # Split by colon on Unix-like systems
+        env_paths = env_paths_str.split(':')
+        for path_str in env_paths:
+            if path_str and path_str not in seen_paths:
+                try:
+                    if os.path.exists(path_str):
+                        found_libraries.append(path_str)
+                        seen_paths.add(path_str)
+                except (PermissionError, OSError):
+                    # Gracefully skip inaccessible paths
+                    pass
+
+    # Check platform-specific standard paths (using Path as it can be mocked for testing)
+    system = platform.system()
+    search_paths = PKCS11_SEARCH_PATHS.get(system, [])
+
+    for path_str in search_paths:
+        if path_str not in seen_paths:
+            try:
+                path_obj = Path(path_str)
+                if path_obj.exists():
+                    found_libraries.append(path_str)
+                    seen_paths.add(path_str)
+            except (PermissionError, OSError):
+                # Gracefully skip inaccessible paths
+                pass
+
+    return found_libraries
+
+
 def find_pkcs11_library() -> str:
     """Find PKCS#11 library on system.
 
@@ -37,21 +90,18 @@ def find_pkcs11_library() -> str:
     2. Platform-specific standard paths
 
     Returns:
-        Path to PKCS#11 library
+        Path to PKCS#11 library (first found)
 
     Raises:
         PKCSLibraryNotFoundError: No library found
     """
-    if env_path := os.environ.get('COHORTCRYPTO_PKCS11_PATH'):
-        if Path(env_path).exists():
-            return env_path
+    libraries = find_all_pkcs11_libraries()
+
+    if libraries:
+        return libraries[0]
 
     system = platform.system()
     search_paths = PKCS11_SEARCH_PATHS.get(system, [])
-
-    for path in search_paths:
-        if Path(path).exists():
-            return path
 
     raise PKCSLibraryNotFoundError(
         f"No PKCS#11 library found on {system}. "
