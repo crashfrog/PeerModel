@@ -1,7 +1,14 @@
 """SQLite index schema generation from @indexed decorators (Issue #18)."""
 
+import sqlite3
 from typing import get_origin
 from dataclasses import fields as dataclass_fields
+from pathlib import Path
+
+from peermodel.exceptions import SchemaMismatchError
+
+
+__all__ = ['SYSTEM_COLUMNS', 'get_sqlite_type', 'generate_ddl', 'IndexDB', 'SchemaMismatchError']
 
 
 # System columns that appear in every indexed table
@@ -78,18 +85,14 @@ def generate_ddl(model_class):
         indexed_fields = model_class._peermodel_indexed_fields
 
     # Start building the CREATE TABLE statement
-    ddl_lines = []
-    ddl_lines.append(f"CREATE TABLE IF NOT EXISTS {model_name} (")
+    col_defs = []
 
     # Add system columns first
-    system_col_defs = []
     for col_name, col_type in SYSTEM_COLUMNS.items():
         if col_name == '_record_id':
-            system_col_defs.append(f"    {col_name} {col_type} PRIMARY KEY")
+            col_defs.append(f"    {col_name} {col_type} PRIMARY KEY")
         else:
-            system_col_defs.append(f"    {col_name} {col_type}")
-
-    ddl_lines.extend(system_col_defs)
+            col_defs.append(f"    {col_name} {col_type}")
 
     # Add model fields
     try:
@@ -101,12 +104,18 @@ def generate_ddl(model_class):
 
             # Get the SQLite type for this field
             sqlite_type = get_sqlite_type(field.type)
-            ddl_lines.append(f"    {field.name} {sqlite_type}")
+            col_defs.append(f"    {field.name} {sqlite_type}")
     except TypeError:
         # Not a dataclass or fields() call failed
         pass
 
-    # Close the CREATE TABLE statement
+    # Join column definitions with commas
+    ddl_lines = [f"CREATE TABLE IF NOT EXISTS {model_name} ("]
+    for i, col_def in enumerate(col_defs):
+        if i < len(col_defs) - 1:
+            ddl_lines.append(col_def + ",")
+        else:
+            ddl_lines.append(col_def)
     ddl_lines.append(");")
 
     # Create the initial DDL string (table definition)
@@ -127,3 +136,171 @@ def generate_ddl(model_class):
             ddl = ddl + "\n\n" + "\n".join(index_statements)
 
     return ddl
+
+
+class IndexDB:
+    """
+    Manages the SQLite index for one or more record types within a cohort.
+
+    The database file lives at the configured path (e.g., ~/.peermodel/<cohort_id>/index.db).
+    One IndexDB instance is shared across all record types for a cohort.
+    Each record type gets its own table, named by the record type.
+    A shared _node_state table holds NodeState rows.
+    """
+
+    def __init__(self, db_path: Path):
+        """
+        Initialize IndexDB with a database path.
+
+        Args:
+            db_path: Path to the SQLite database file
+        """
+        self.db_path = db_path
+        # Ensure parent directory exists
+        if not self.db_path.parent.exists():
+            raise FileNotFoundError(f"Directory does not exist: {self.db_path.parent}")
+
+    def ensure_schema(self, model_class: type) -> None:
+        """
+        Create or verify the SQLite schema for a DocumentObj subclass.
+
+        Creates:
+          - Record table named after record_type with columns for each annotated field
+          - System columns: _record_id, _op_id, _sequence, _timestamp, _head_cid,
+            _tombstoned, _schema_version
+          - CREATE INDEX on each field decorated with @indexed
+          - CREATE INDEX on _tombstoned (for live-record filtering)
+          - _node_state table if not exists
+
+        Idempotent: safe to call on an existing database.
+        Raises SchemaMismatchError if the existing table has incompatible
+        columns (different types or missing non-nullable columns).
+
+        Args:
+            model_class: A dataclass model decorated with @peer.model
+
+        Raises:
+            SchemaMismatchError: If existing schema doesn't match expected schema
+        """
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+
+            model_name = model_class.__name__
+
+            # Check if table already exists
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (model_name,)
+            )
+            table_exists = cursor.fetchone() is not None
+
+            if table_exists:
+                # Verify existing schema matches expected schema
+                self._verify_schema(cursor, model_class)
+            else:
+                # Create the table
+                ddl = generate_ddl(model_class)
+                cursor.executescript(ddl)
+
+            # Create or verify indexes
+            self._ensure_indexes(cursor, model_class)
+
+            # Create _node_state table if not exists
+            self._ensure_node_state_table(cursor)
+
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _verify_schema(self, cursor: sqlite3.Cursor, model_class: type) -> None:
+        """
+        Verify that the existing table schema matches the expected schema.
+
+        Args:
+            cursor: SQLite cursor
+            model_class: The model class with expected schema
+
+        Raises:
+            SchemaMismatchError: If existing schema doesn't match expected
+        """
+        model_name = model_class.__name__
+
+        # Get existing columns from database
+        cursor.execute(f"PRAGMA table_info({model_name})")
+        existing_cols = {row[1]: row[2] for row in cursor.fetchall()}
+
+        # Build expected schema
+        expected_cols = dict(SYSTEM_COLUMNS)
+
+        # Add model fields
+        try:
+            model_fields = dataclass_fields(model_class)
+            for field in model_fields:
+                if field.name.startswith('_'):
+                    continue
+                sqlite_type = get_sqlite_type(field.type)
+                expected_cols[field.name] = sqlite_type
+        except TypeError:
+            pass
+
+        # Check all expected columns exist with correct types
+        for col_name, col_type in expected_cols.items():
+            if col_name not in existing_cols:
+                raise SchemaMismatchError(
+                    f"Missing column '{col_name}' in table '{model_name}'"
+                )
+            if existing_cols[col_name] != col_type:
+                raise SchemaMismatchError(
+                    f"Column '{col_name}' has type '{existing_cols[col_name]}' "
+                    f"but expected '{col_type}' in table '{model_name}'"
+                )
+
+    def _ensure_indexes(self, cursor: sqlite3.Cursor, model_class: type) -> None:
+        """
+        Create indexes on @indexed fields and _tombstoned column.
+
+        Args:
+            cursor: SQLite cursor
+            model_class: The model class
+        """
+        model_name = model_class.__name__
+
+        # Get indexed fields
+        indexed_fields = set()
+        if hasattr(model_class, '_peermodel_indexed_fields'):
+            indexed_fields = model_class._peermodel_indexed_fields
+
+        # Create indexes for indexed fields
+        for field_name in indexed_fields:
+            index_name = f"{model_name}_{field_name}_idx"
+            cursor.execute(
+                f"CREATE INDEX IF NOT EXISTS {index_name} ON {model_name} ({field_name})"
+            )
+
+        # Create index on _tombstoned
+        tombstone_index_name = f"{model_name}__tombstoned_idx"
+        cursor.execute(
+            f"CREATE INDEX IF NOT EXISTS {tombstone_index_name} ON {model_name} (_tombstoned)"
+        )
+
+    def _ensure_node_state_table(self, cursor: sqlite3.Cursor) -> None:
+        """
+        Create _node_state table if not exists.
+
+        Args:
+            cursor: SQLite cursor
+        """
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS _node_state (
+                cohort_id TEXT NOT NULL,
+                record_type TEXT NOT NULL,
+                last_synced_head_cid TEXT,
+                last_synced_sequence INTEGER NOT NULL,
+                snapshot_cid TEXT,
+                snapshot_sequence INTEGER NOT NULL,
+                index_status TEXT NOT NULL,
+                last_sync_at TEXT,
+                PRIMARY KEY (cohort_id, record_type)
+            )
+        """)
