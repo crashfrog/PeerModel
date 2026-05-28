@@ -60,11 +60,11 @@ class RealTokenSession:
 
         try:
             import pkcs11
-            # Sign using token's Ed25519 key
+            # Sign using token's Ed25519 key with EDDSA mechanism
             signature = self._pkcs11_session.sign(
                 self._signing_key_object,
                 message,
-                mechanism=pkcs11.Mechanism.SHA256_RSA_PKCS
+                mechanism=pkcs11.Mechanism.EDDSA
             )
             return signature
         except Exception as e:
