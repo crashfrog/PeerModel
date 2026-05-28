@@ -137,7 +137,7 @@ class MockTokenSession:
             PINError: If PIN is incorrect
         """
         if pin != "123456":
-            raise PINError(f"Incorrect PIN")
+            raise PINError("Incorrect PIN")
         self._authenticated = True
 
     def sign(self, message: bytes) -> bytes:
@@ -166,7 +166,6 @@ class MockTokenSession:
             raise RuntimeError("Session not authenticated")
 
         # Use cryptography library to perform ECDH
-        from cryptography.hazmat.primitives.asymmetric import x25519
         from cryptography.hazmat.primitives.serialization import load_der_public_key
 
         # Load peer public key
@@ -198,13 +197,14 @@ def mock_enumerate_tokens() -> list:
     """Return list of mock tokens for testing.
 
     Returns:
-        List containing one mock token
+        List containing mock tokens in slots 0-10
     """
     return [
         TokenInfo(
-            slot_id=0,
-            token_label="Mock PIV Card",
-            token_serial="MOCK123456",
+            slot_id=i,
+            token_label=f"Mock PIV Card {i}",
+            token_serial=f"MOCK{i:06d}",
             manufacturer="Mock Hardware Inc."
         )
+        for i in range(10)
     ]
