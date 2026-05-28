@@ -8,7 +8,13 @@ from pathlib import Path
 from peermodel.exceptions import SchemaMismatchError
 
 
-__all__ = ['SYSTEM_COLUMNS', 'get_sqlite_type', 'generate_ddl', 'IndexDB', 'SchemaMismatchError']
+__all__ = [
+    'SYSTEM_COLUMNS',
+    'get_sqlite_type',
+    'generate_ddl',
+    'IndexDB',
+    'SchemaMismatchError'
+]
 
 
 # System columns that appear in every indexed table
@@ -142,7 +148,8 @@ class IndexDB:
     """
     Manages the SQLite index for one or more record types within a cohort.
 
-    The database file lives at the configured path (e.g., ~/.peermodel/<cohort_id>/index.db).
+    The database file lives at the configured path
+    (e.g., ~/.peermodel/<cohort_id>/index.db).
     One IndexDB instance is shared across all record types for a cohort.
     Each record type gets its own table, named by the record type.
     A shared _node_state table holds NodeState rows.
@@ -158,16 +165,19 @@ class IndexDB:
         self.db_path = db_path
         # Ensure parent directory exists
         if not self.db_path.parent.exists():
-            raise FileNotFoundError(f"Directory does not exist: {self.db_path.parent}")
+            raise FileNotFoundError(
+                f"Directory does not exist: {self.db_path.parent}"
+            )
 
     def ensure_schema(self, model_class: type) -> None:
         """
         Create or verify the SQLite schema for a DocumentObj subclass.
 
         Creates:
-          - Record table named after record_type with columns for each annotated field
-          - System columns: _record_id, _op_id, _sequence, _timestamp, _head_cid,
-            _tombstoned, _schema_version
+          - Record table named after record_type with columns for each
+            annotated field
+          - System columns: _record_id, _op_id, _sequence, _timestamp,
+            _head_cid, _tombstoned, _schema_version
           - CREATE INDEX on each field decorated with @indexed
           - CREATE INDEX on _tombstoned (for live-record filtering)
           - _node_state table if not exists
@@ -180,7 +190,7 @@ class IndexDB:
             model_class: A dataclass model decorated with @peer.model
 
         Raises:
-            SchemaMismatchError: If existing schema doesn't match expected schema
+            SchemaMismatchError: If existing schema doesn't match expected
         """
         conn = sqlite3.connect(self.db_path)
         try:
@@ -213,7 +223,9 @@ class IndexDB:
         finally:
             conn.close()
 
-    def _verify_schema(self, cursor: sqlite3.Cursor, model_class: type) -> None:
+    def _verify_schema(
+        self, cursor: sqlite3.Cursor, model_class: type
+    ) -> None:
         """
         Verify that the existing table schema matches the expected schema.
 
@@ -252,11 +264,14 @@ class IndexDB:
                 )
             if existing_cols[col_name] != col_type:
                 raise SchemaMismatchError(
-                    f"Column '{col_name}' has type '{existing_cols[col_name]}' "
-                    f"but expected '{col_type}' in table '{model_name}'"
+                    f"Column '{col_name}' has type "
+                    f"'{existing_cols[col_name]}' but expected '{col_type}' "
+                    f"in table '{model_name}'"
                 )
 
-    def _ensure_indexes(self, cursor: sqlite3.Cursor, model_class: type) -> None:
+    def _ensure_indexes(
+        self, cursor: sqlite3.Cursor, model_class: type
+    ) -> None:
         """
         Create indexes on @indexed fields and _tombstoned column.
 
@@ -275,13 +290,15 @@ class IndexDB:
         for field_name in indexed_fields:
             index_name = f"{model_name}_{field_name}_idx"
             cursor.execute(
-                f"CREATE INDEX IF NOT EXISTS {index_name} ON {model_name} ({field_name})"
+                f"CREATE INDEX IF NOT EXISTS {index_name} ON "
+                f"{model_name} ({field_name})"
             )
 
         # Create index on _tombstoned
         tombstone_index_name = f"{model_name}__tombstoned_idx"
         cursor.execute(
-            f"CREATE INDEX IF NOT EXISTS {tombstone_index_name} ON {model_name} (_tombstoned)"
+            f"CREATE INDEX IF NOT EXISTS {tombstone_index_name} ON "
+            f"{model_name} (_tombstoned)"
         )
 
     def _ensure_node_state_table(self, cursor: sqlite3.Cursor) -> None:
@@ -291,7 +308,8 @@ class IndexDB:
         Args:
             cursor: SQLite cursor
         """
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS _node_state (
                 cohort_id TEXT NOT NULL,
                 record_type TEXT NOT NULL,
@@ -303,4 +321,5 @@ class IndexDB:
                 last_sync_at TEXT,
                 PRIMARY KEY (cohort_id, record_type)
             )
-        """)
+            """
+        )
