@@ -6,8 +6,10 @@ No custom crypto implementations.
 
 import os
 import base64
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, asdict, fields
+from datetime import datetime
+from typing import Optional, Type, TypeVar
+import cbor2
 from cryptography.hazmat.primitives.asymmetric import x25519, ed25519, ec
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes, serialization
@@ -17,6 +19,8 @@ from peermodel.exceptions import (
     KeyGenerationError,
     SignatureVerificationError,
 )
+
+T = TypeVar('T')
 
 
 @dataclass
@@ -371,3 +375,180 @@ def verify_bytes(message, signature, public_key_der, algorithm="ed25519"):
 
     except Exception:
         return False
+
+
+def _object_to_dict(obj):
+    """Convert a dataclass or dict to a canonical dict representation.
+
+    For dataclasses:
+    - Converts to dict via asdict()
+    - Recursively handles nested dataclasses and lists
+    - Handles datetime fields (convert to ISO format string)
+
+    For dicts:
+    - Returns as-is (will be sorted by cbor2 encoder)
+
+    For lists:
+    - Recursively converts elements
+    """
+    if isinstance(obj, dict):
+        # Recursively convert dict values
+        return {k: _object_to_dict(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        # Recursively convert list elements
+        return [_object_to_dict(item) for item in obj]
+    elif isinstance(obj, datetime):
+        # Convert datetime to ISO format string for canonical representation
+        return obj.isoformat()
+    elif hasattr(obj, '__dataclass_fields__'):
+        # It's a dataclass - convert to dict and recursively handle fields
+        obj_dict = asdict(obj)
+        return {k: _object_to_dict(v) for k, v in obj_dict.items()}
+    else:
+        # Return primitives as-is (bytes, str, int, bool, None)
+        return obj
+
+
+def serialize_to_cbor(obj) -> bytes:
+    """Serialize an object to canonical CBOR (RFC 7049 section 3.9).
+
+    Supports:
+    - Dataclasses (MemberCredential, MembershipProposal, MembershipVote)
+    - Dicts with nested structures
+    - Lists and nested containers
+    - Binary data (bytes)
+    - Primitive types (str, int, bool, None)
+    - Datetime objects (converted to ISO format strings)
+
+    The output is canonical CBOR: deterministic encoding suitable for signing.
+    Same object serialized twice produces identical bytes.
+
+    Args:
+        obj: Object to serialize (dataclass, dict, list, or primitive)
+
+    Returns:
+        bytes: Canonical CBOR encoding
+    """
+    # Convert object to canonical dict/list representation
+    canonical_obj = _object_to_dict(obj)
+
+    # Encode to CBOR with canonical=True for deterministic output
+    return cbor2.dumps(canonical_obj, canonical=True)
+
+
+def deserialize_from_cbor(data: bytes, target_type: Type[T]) -> T:
+    """Deserialize CBOR bytes back to an object.
+
+    Supports:
+    - Dataclasses (MemberCredential, MembershipProposal, MembershipVote)
+    - Built-in types (dict, list)
+    - Nested structures
+
+    For dataclasses:
+    - Decodes CBOR to dict first
+    - Reconstructs dataclass from dict fields
+    - Handles nested dataclass fields recursively
+    - Converts ISO format strings back to datetime
+    - Preserves None values for optional fields
+
+    Args:
+        data: CBOR bytes to deserialize
+        target_type: Target type to deserialize into (dataclass or dict)
+
+    Returns:
+        Instance of target_type
+
+    Raises:
+        ValueError: If deserialization fails
+        TypeError: If target_type is not supported
+    """
+    try:
+        # Decode CBOR to dict/list/primitive
+        decoded = cbor2.loads(data)
+
+        # If target is dict or list, return directly
+        if target_type in (dict, list):
+            return decoded
+
+        # If target is a dataclass, reconstruct it
+        if hasattr(target_type, '__dataclass_fields__'):
+            return _dict_to_dataclass(decoded, target_type)
+
+        # Otherwise return decoded value as-is
+        return decoded
+
+    except Exception as e:
+        raise ValueError(f"Failed to deserialize CBOR: {e}")
+
+
+def _dict_to_dataclass(data: dict, target_type: Type[T]) -> T:
+    """Reconstruct a dataclass from a dict.
+
+    Handles:
+    - Nested dataclass fields (reconstructs recursively)
+    - Lists of dataclass objects
+    - Datetime fields (converts from ISO format string)
+    - Optional fields (preserves None values)
+    - Missing fields (uses dataclass defaults)
+    """
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected dict for dataclass, got {type(data)}")
+
+    # Get field info from dataclass
+    field_types = {f.name: f.type for f in fields(target_type)}
+
+    # Reconstruct each field
+    kwargs = {}
+    for field_name, field_type in field_types.items():
+        if field_name not in data:
+            # Field not in data, skip it (dataclass default will be used)
+            continue
+
+        value = data[field_name]
+
+        # Handle None values
+        if value is None:
+            kwargs[field_name] = None
+            continue
+
+        # Handle datetime conversion from ISO string
+        if field_type is datetime and isinstance(value, str):
+            kwargs[field_name] = datetime.fromisoformat(value)
+        # Handle list of dataclasses
+        elif hasattr(field_type, '__origin__') and field_type.__origin__ is list:
+            # Extract the inner type from List[T]
+            inner_type = field_type.__args__[0] if field_type.__args__ else dict
+            if isinstance(value, list):
+                kwargs[field_name] = [
+                    _dict_to_dataclass(item, inner_type) if isinstance(item, dict) and hasattr(inner_type, '__dataclass_fields__')
+                    else item
+                    for item in value
+                ]
+            else:
+                kwargs[field_name] = value
+        # Handle nested dataclass fields
+        elif hasattr(field_type, '__dataclass_fields__') and isinstance(value, dict):
+            kwargs[field_name] = _dict_to_dataclass(value, field_type)
+        # Handle optional/union types
+        elif hasattr(field_type, '__origin__') and field_type.__origin__ is type(None):
+            kwargs[field_name] = None
+        else:
+            # Primitive types or unknown - pass through
+            kwargs[field_name] = value
+
+    return target_type(**kwargs)
+
+
+def canonical_cbor_bytes(obj) -> bytes:
+    """Serialize an object to canonical CBOR bytes suitable for cryptographic signing.
+
+    This is an alias for serialize_to_cbor() provided for explicit intent
+    when the output will be used for signing/verification.
+
+    Args:
+        obj: Object to serialize
+
+    Returns:
+        bytes: Canonical CBOR encoding (deterministic)
+    """
+    return serialize_to_cbor(obj)

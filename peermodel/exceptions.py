@@ -31,3 +31,14 @@ class SignatureVerificationError(PeerModelCryptoError):
 class SchemaMismatchError(Exception):
     """Raised when SQLite schema doesn't match expected model schema."""
     pass
+
+
+class LogIntegrityError(Exception):
+    """Raised when operation log is corrupted or has integrity issues.
+
+    This error indicates serious problems with the operation log such as:
+    - Missing CIDs that cannot be fetched after retries
+    - Non-contiguous sequence numbers (gaps in the chain)
+    - More than 10% of operations with invalid signatures
+    """
+    pass
