@@ -56,4 +56,6 @@ find = {}
 [tool.pytest.ini_options]
 markers = [
     "hardware: marks tests that require real hardware tokens (deselect with '-m \"not hardware\"')",
+    "issue_15: marks tests for CBOR serialization feature (issue #15)",
+    "issue_20: marks tests for operation application to SQLite index (issue #20)",
 ]
