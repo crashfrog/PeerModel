@@ -1,11 +1,13 @@
-from peermodel.capabilities import IdentityManager, Keysystem, SoftwareKeysystem
+from peermodel.capabilities import Keysystem, SoftwareKeysystem
 from peermodel import primitives
-from typing import Union, Iterator, List, Optional
+from typing import Iterator, List, Optional
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from itertools import chain
 from cryptography.fernet import Fernet
 import json
+from dataclasses import dataclass
+from datetime import datetime
 
 """
 A cohort model of delegation where the cohort is the group of people who have access to a peermodel database.
@@ -20,31 +22,59 @@ A cohort member can invite a guest to join the cohort. A majority of cohort memb
 
 """
 
+
+@dataclass
+class CohortIdentity:
+    """Cohort identity and metadata."""
+    cohort_id: str
+    signing_public_key: bytes
+    signing_algorithm: str
+    encryption_public_key: bytes
+    encryption_algorithm: str
+    created_at: datetime
+    keybundle_cid: Optional[str] = None
+
+
+@dataclass
+class KeyBundleEntry:
+    """Single member's encrypted cohort key."""
+    member_id: str
+    encrypted_key_material: bytes
+    ephemeral_public_key_der: bytes
+    nonce: bytes
+    tag: bytes
+
+
+@dataclass
+class KeyBundle:
+    """Encrypted cohort key distribution."""
+    cohort_id: str
+    version: int
+    signing_alg: str
+    encryption_alg: str
+    entries: List[KeyBundleEntry]
+
+
 class Cohort(ABC):
 
     KeyExchange = defaultdict(lambda: defaultdict(Keysystem))
-    
+
     # CLI api
 
     def create(self):
         pass
-    
 
     def invite(self):
         pass
-    
 
     def review(self):
         pass
-    
 
     def approve(self):
         pass
-    
 
     def revoke(self):
         pass
-
 
     def regenerate(self):
         pass
@@ -82,8 +112,7 @@ class Cohort(ABC):
     @abstractmethod
     def signature(self):
         pass
-    
-    
+
 
 class SimpleCohort(Cohort):
     """Concrete implementation of Cohort using software keysystem."""
@@ -374,8 +403,6 @@ class SimpleCohort(Cohort):
 
         return op
 
-
-
     def regenerate(self):
         """Regenerate cohort signing/encryption keys."""
         self.regenerate_cohort_keypair()
@@ -394,3 +421,119 @@ class Guest(ABC):
 
     def revoke(self):
         pass
+
+
+def create_cohort(cohort_id: str, founder_identity: dict) -> tuple:
+    """Create a new cohort with a founder.
+
+    Generates fresh cohort keypair, founder signs CohortIdentity,
+    encrypts cohort key to founder's public key, and creates initial KeyBundle.
+
+    Args:
+        cohort_id: Unique identifier for the cohort
+        founder_identity: Dictionary with founder's keys:
+            - 'member_id': str, founder's member ID
+            - 'x25519_public': bytes, founder's X25519 public key (DER)
+            - 'x25519_private': bytes, founder's X25519 private key (DER)
+            - 'ed25519_public': bytes, founder's Ed25519 public key (DER)
+            - 'ed25519_private': bytes, founder's Ed25519 private key (DER)
+
+    Returns:
+        tuple: (CohortIdentity, KeyBundle, cohort_private_key_bytes)
+            - CohortIdentity: Cohort metadata and public keys
+            - KeyBundle: Encrypted cohort key for founder
+            - cohort_private_key_bytes: CBOR-serialized private key material
+    """
+    # Generate fresh cohort keypair
+    result = primitives.generate_keypair()
+    cohort_x25519_priv, cohort_x25519_pub, cohort_ed25519_priv, cohort_ed25519_pub = result
+
+    # Create CohortIdentity
+    cohort_identity = CohortIdentity(
+        cohort_id=cohort_id,
+        signing_public_key=cohort_ed25519_pub,
+        signing_algorithm="ed25519",
+        encryption_public_key=cohort_x25519_pub,
+        encryption_algorithm="x25519",
+        created_at=datetime.now(),
+        keybundle_cid=None
+    )
+
+    # Prepare cohort private key material as CBOR-encoded dict
+    cohort_key_material = {
+        'x25519_private': cohort_x25519_priv,
+        'ed25519_private': cohort_ed25519_priv,
+    }
+    cohort_private_key_bytes = primitives.serialize_to_cbor(cohort_key_material)
+
+    # Encrypt cohort private key for founder
+    encrypted_key_material, nonce, tag, ephemeral_public_key = primitives.encrypt_to_recipient(
+        cohort_private_key_bytes,
+        founder_identity['x25519_public']
+    )
+
+    # Create KeyBundleEntry for founder
+    founder_entry = KeyBundleEntry(
+        member_id=founder_identity['member_id'],
+        encrypted_key_material=encrypted_key_material,
+        ephemeral_public_key_der=ephemeral_public_key,
+        nonce=nonce,
+        tag=tag
+    )
+
+    # Create KeyBundle
+    keybundle = KeyBundle(
+        cohort_id=cohort_id,
+        version=1,
+        signing_alg="ed25519",
+        encryption_alg="x25519",
+        entries=[founder_entry]
+    )
+
+    return (cohort_identity, keybundle, cohort_private_key_bytes)
+
+
+def get_cohort_private_key(
+    keybundle: KeyBundle,
+    member_id: str,
+    member_x25519_private: bytes,
+    member_ed25519_private: bytes,
+) -> bytes:
+    """Decrypt the cohort private key from KeyBundle.
+
+    Finds the entry for the given member in the KeyBundle and decrypts
+    the cohort private key using the member's X25519 private key.
+
+    Args:
+        keybundle: KeyBundle containing encrypted keys
+        member_id: ID of the member (must match an entry in keybundle)
+        member_x25519_private: Member's X25519 private key (DER)
+        member_ed25519_private: Member's Ed25519 private key (DER, not used for decryption)
+
+    Returns:
+        bytes: Decrypted cohort private key (CBOR-encoded)
+
+    Raises:
+        ValueError: If member not found in KeyBundle entries
+        DecryptionError: If decryption fails
+    """
+    # Find entry for this member
+    entry = None
+    for e in keybundle.entries:
+        if e.member_id == member_id:
+            entry = e
+            break
+
+    if entry is None:
+        raise ValueError(f"Member {member_id} not found in KeyBundle entries")
+
+    # Decrypt using member's X25519 private key
+    cohort_private_key_bytes = primitives.decrypt_from_sender(
+        entry.encrypted_key_material,
+        entry.nonce,
+        entry.tag,
+        entry.ephemeral_public_key_der,
+        member_x25519_private
+    )
+
+    return cohort_private_key_bytes
