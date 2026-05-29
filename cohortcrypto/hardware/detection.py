@@ -49,8 +49,9 @@ def find_all_pkcs11_libraries() -> List[str]:
     found_libraries = []
     seen_paths = set()
 
-    # Check environment variable first - user-specified paths are checked with os.path.exists
-    # (not Path.exists() so they work correctly even when Path is mocked)
+    # Check environment variable first - user-specified paths are checked
+    # with os.path.exists (not Path.exists() so they work correctly even
+    # when Path is mocked)
     if env_paths_str := os.environ.get('COHORTCRYPTO_PKCS11_PATH'):
         # Split by colon on Unix-like systems
         env_paths = env_paths_str.split(':')
@@ -64,7 +65,8 @@ def find_all_pkcs11_libraries() -> List[str]:
                     # Gracefully skip inaccessible paths
                     pass
 
-    # Check platform-specific standard paths (using Path as it can be mocked for testing)
+    # Check platform-specific standard paths (using Path as it can be
+    # mocked for testing)
     system = platform.system()
     search_paths = PKCS11_SEARCH_PATHS.get(system, [])
 
