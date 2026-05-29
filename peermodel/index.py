@@ -4,29 +4,28 @@ import sqlite3
 from typing import get_origin
 from dataclasses import fields as dataclass_fields
 from pathlib import Path
-from datetime import datetime
 
 from peermodel.exceptions import SchemaMismatchError
-from peermodel.operations import OperationRecord
+
 
 __all__ = [
-    "SYSTEM_COLUMNS",
-    "get_sqlite_type",
-    "generate_ddl",
-    "IndexDB",
-    "SchemaMismatchError",
+    'SYSTEM_COLUMNS',
+    'get_sqlite_type',
+    'generate_ddl',
+    'IndexDB',
+    'SchemaMismatchError'
 ]
 
 
 # System columns that appear in every indexed table
 SYSTEM_COLUMNS = {
-    "_record_id": "TEXT",
-    "_op_id": "TEXT",
-    "_sequence": "INTEGER",
-    "_timestamp": "INTEGER",
-    "_head_cid": "TEXT",
-    "_tombstoned": "INTEGER",
-    "_schema_version": "INTEGER",
+    '_record_id': 'TEXT',
+    '_op_id': 'TEXT',
+    '_sequence': 'INTEGER',
+    '_timestamp': 'INTEGER',
+    '_head_cid': 'TEXT',
+    '_tombstoned': 'INTEGER',
+    '_schema_version': 'INTEGER',
 }
 
 
@@ -43,33 +42,33 @@ def get_sqlite_type(python_type):
     """
     # Handle None type
     if python_type is None or python_type is type(None):
-        return "TEXT"
+        return 'TEXT'
 
     # Handle typing hints like List[str], Dict[str, int]
     origin = get_origin(python_type)
     if origin is not None:
         # For any generic type (List, Dict, Tuple, etc.), use BLOB
         # for CBOR encoding
-        return "BLOB"
+        return 'BLOB'
 
     # Handle basic types
     if python_type is str:
-        return "TEXT"
+        return 'TEXT'
     elif python_type is int:
-        return "INTEGER"
+        return 'INTEGER'
     elif python_type is float:
-        return "REAL"
+        return 'REAL'
     elif python_type is bool:
-        return "INTEGER"  # SQLite uses 0/1 for boolean
+        return 'INTEGER'  # SQLite uses 0/1 for boolean
     elif python_type is dict:
-        return "BLOB"  # CBOR-encoded
+        return 'BLOB'  # CBOR-encoded
     elif python_type is list:
-        return "BLOB"  # CBOR-encoded
+        return 'BLOB'  # CBOR-encoded
     elif python_type is bytes:
-        return "BLOB"
+        return 'BLOB'
     else:
         # Default for unknown types
-        return "BLOB"
+        return 'BLOB'
 
 
 def generate_ddl(model_class):
@@ -88,7 +87,7 @@ def generate_ddl(model_class):
 
     # Get indexed fields (if any)
     indexed_fields = set()
-    if hasattr(model_class, "_peermodel_indexed_fields"):
+    if hasattr(model_class, '_peermodel_indexed_fields'):
         indexed_fields = model_class._peermodel_indexed_fields
 
     # Start building the CREATE TABLE statement
@@ -96,7 +95,7 @@ def generate_ddl(model_class):
 
     # Add system columns first
     for col_name, col_type in SYSTEM_COLUMNS.items():
-        if col_name == "_record_id":
+        if col_name == '_record_id':
             col_defs.append(f"    {col_name} {col_type} PRIMARY KEY")
         else:
             col_defs.append(f"    {col_name} {col_type}")
@@ -106,7 +105,7 @@ def generate_ddl(model_class):
         model_fields = dataclass_fields(model_class)
         for field in model_fields:
             # Skip internal fields like _id
-            if field.name.startswith("_"):
+            if field.name.startswith('_'):
                 continue
 
             # Get the SQLite type for this field
@@ -149,7 +148,8 @@ class IndexDB:
     """
     Manages the SQLite index for one or more record types within a cohort.
 
-    The database file lives at the configured path (e.g., ~/.peermodel/<cohort_id>/index.db).
+    The database file lives at the configured path
+    (e.g., ~/.peermodel/<cohort_id>/index.db).
     One IndexDB instance is shared across all record types for a cohort.
     Each record type gets its own table, named by the record type.
     A shared _node_state table holds NodeState rows.
@@ -165,16 +165,19 @@ class IndexDB:
         self.db_path = db_path
         # Ensure parent directory exists
         if not self.db_path.parent.exists():
-            raise FileNotFoundError(f"Directory does not exist: {self.db_path.parent}")
+            raise FileNotFoundError(
+                f"Directory does not exist: {self.db_path.parent}"
+            )
 
     def ensure_schema(self, model_class: type) -> None:
         """
         Create or verify the SQLite schema for a DocumentObj subclass.
 
         Creates:
-          - Record table named after record_type with columns for each annotated field
-          - System columns: _record_id, _op_id, _sequence, _timestamp, _head_cid,
-            _tombstoned, _schema_version
+          - Record table named after record_type with columns for each
+            annotated field
+          - System columns: _record_id, _op_id, _sequence, _timestamp,
+            _head_cid, _tombstoned, _schema_version
           - CREATE INDEX on each field decorated with @indexed
           - CREATE INDEX on _tombstoned (for live-record filtering)
           - _node_state table if not exists
@@ -187,7 +190,7 @@ class IndexDB:
             model_class: A dataclass model decorated with @peer.model
 
         Raises:
-            SchemaMismatchError: If existing schema doesn't match expected schema
+            SchemaMismatchError: If existing schema doesn't match expected
         """
         conn = sqlite3.connect(self.db_path)
         try:
@@ -198,7 +201,7 @@ class IndexDB:
             # Check if table already exists
             cursor.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                (model_name,),
+                (model_name,)
             )
             table_exists = cursor.fetchone() is not None
 
@@ -220,7 +223,9 @@ class IndexDB:
         finally:
             conn.close()
 
-    def _verify_schema(self, cursor: sqlite3.Cursor, model_class: type) -> None:
+    def _verify_schema(
+        self, cursor: sqlite3.Cursor, model_class: type
+    ) -> None:
         """
         Verify that the existing table schema matches the expected schema.
 
@@ -244,7 +249,7 @@ class IndexDB:
         try:
             model_fields = dataclass_fields(model_class)
             for field in model_fields:
-                if field.name.startswith("_"):
+                if field.name.startswith('_'):
                     continue
                 sqlite_type = get_sqlite_type(field.type)
                 expected_cols[field.name] = sqlite_type
@@ -259,11 +264,14 @@ class IndexDB:
                 )
             if existing_cols[col_name] != col_type:
                 raise SchemaMismatchError(
-                    f"Column '{col_name}' has type '{existing_cols[col_name]}' "
-                    f"but expected '{col_type}' in table '{model_name}'"
+                    f"Column '{col_name}' has type "
+                    f"'{existing_cols[col_name]}' but expected '{col_type}' "
+                    f"in table '{model_name}'"
                 )
 
-    def _ensure_indexes(self, cursor: sqlite3.Cursor, model_class: type) -> None:
+    def _ensure_indexes(
+        self, cursor: sqlite3.Cursor, model_class: type
+    ) -> None:
         """
         Create indexes on @indexed fields and _tombstoned column.
 
@@ -275,20 +283,22 @@ class IndexDB:
 
         # Get indexed fields
         indexed_fields = set()
-        if hasattr(model_class, "_peermodel_indexed_fields"):
+        if hasattr(model_class, '_peermodel_indexed_fields'):
             indexed_fields = model_class._peermodel_indexed_fields
 
         # Create indexes for indexed fields
         for field_name in indexed_fields:
             index_name = f"{model_name}_{field_name}_idx"
             cursor.execute(
-                f"CREATE INDEX IF NOT EXISTS {index_name} ON {model_name} ({field_name})"
+                f"CREATE INDEX IF NOT EXISTS {index_name} ON "
+                f"{model_name} ({field_name})"
             )
 
         # Create index on _tombstoned
         tombstone_index_name = f"{model_name}__tombstoned_idx"
         cursor.execute(
-            f"CREATE INDEX IF NOT EXISTS {tombstone_index_name} ON {model_name} (_tombstoned)"
+            f"CREATE INDEX IF NOT EXISTS {tombstone_index_name} ON "
+            f"{model_name} (_tombstoned)"
         )
 
     def _ensure_node_state_table(self, cursor: sqlite3.Cursor) -> None:
@@ -298,7 +308,8 @@ class IndexDB:
         Args:
             cursor: SQLite cursor
         """
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS _node_state (
                 cohort_id TEXT NOT NULL,
                 record_type TEXT NOT NULL,
@@ -310,183 +321,5 @@ class IndexDB:
                 last_sync_at TEXT,
                 PRIMARY KEY (cohort_id, record_type)
             )
-        """)
-
-    def apply_operation(self, model_class: type, op: OperationRecord) -> None:
-        """
-        Apply a single operation to the index database.
-
-        Handles INSERT, UPDATE, and TOMBSTONE operations idempotently.
-        Operations are idempotent: replaying the same op_id is a no-op.
-
-        Args:
-            model_class: The model class (used to get table name)
-            op: OperationRecord to apply
-
-        Operation types:
-            - insert: INSERT OR REPLACE new/updated row
-            - update: UPDATE existing row with new payload
-            - tombstone: SET _tombstoned=1 on existing row
-        """
-        conn = sqlite3.connect(self.db_path)
-        try:
-            cursor = conn.cursor()
-            model_name = model_class.__name__
-
-            # Check if this op_id has already been applied (idempotency check)
-            cursor.execute(
-                f"SELECT _op_id FROM {model_name} WHERE _record_id = ? AND _op_id = ?",
-                (op.record_id, op.op_id),
-            )
-            if cursor.fetchone() is not None:
-                # Operation already applied, skip
-                return
-
-            # Convert timestamp to integer (Unix timestamp in milliseconds)
-            try:
-                # Parse ISO format timestamp
-                if op.timestamp.endswith("Z"):
-                    ts_str = op.timestamp[:-1]
-                else:
-                    ts_str = op.timestamp
-                dt = datetime.fromisoformat(ts_str)
-                timestamp_int = int(dt.timestamp() * 1000)
-            except (ValueError, AttributeError):
-                # Fallback: use current time
-                timestamp_int = int(datetime.utcnow().timestamp() * 1000)
-
-            if op.op_type == "insert":
-                # INSERT OR REPLACE: insert new row or replace existing
-                self._apply_insert(cursor, model_name, op, timestamp_int)
-            elif op.op_type == "update":
-                # UPDATE: update existing row
-                self._apply_update(cursor, model_name, op, timestamp_int)
-            elif op.op_type == "tombstone":
-                # TOMBSTONE: set _tombstoned=1
-                self._apply_tombstone(cursor, model_name, op, timestamp_int)
-
-            conn.commit()
-        finally:
-            conn.close()
-
-    def _apply_insert(
-        self,
-        cursor: sqlite3.Cursor,
-        model_name: str,
-        op: OperationRecord,
-        timestamp_int: int,
-    ) -> None:
-        """
-        Apply an INSERT operation (INSERT OR REPLACE).
-
-        Args:
-            cursor: SQLite cursor
-            model_name: Name of the table
-            op: OperationRecord with op_type='insert'
-            timestamp_int: Timestamp as integer
-        """
-        # Build the column list and value placeholders
-        columns = [
-            "_record_id",
-            "_op_id",
-            "_sequence",
-            "_timestamp",
-            "_head_cid",
-            "_tombstoned",
-        ]
-        values = [
-            op.record_id,
-            op.op_id,
-            op.sequence_number,
-            timestamp_int,
-            op.previous_head_cid,
-            0,
-        ]
-
-        # Add payload fields to columns and values
-        if op.payload:
-            for key, val in op.payload.items():
-                columns.append(key)
-                values.append(val)
-
-        # Build INSERT OR REPLACE statement
-        placeholders = ",".join(["?" for _ in values])
-        col_list = ",".join(columns)
-        sql = (
-            f"INSERT OR REPLACE INTO {model_name} ({col_list}) VALUES ({placeholders})"
-        )
-
-        cursor.execute(sql, values)
-
-    def _apply_update(
-        self,
-        cursor: sqlite3.Cursor,
-        model_name: str,
-        op: OperationRecord,
-        timestamp_int: int,
-    ) -> None:
-        """
-        Apply an UPDATE operation.
-
-        Args:
-            cursor: SQLite cursor
-            model_name: Name of the table
-            op: OperationRecord with op_type='update'
-            timestamp_int: Timestamp as integer
-        """
-        # Build SET clause for system columns
-        set_parts = [
-            "_op_id = ?",
-            "_sequence = ?",
-            "_timestamp = ?",
-            "_head_cid = ?",
-            "_tombstoned = 0",  # Update always un-tombstones
-        ]
-        values = [op.op_id, op.sequence_number, timestamp_int, op.previous_head_cid]
-
-        # Add payload fields to SET clause
-        if op.payload:
-            for key, val in op.payload.items():
-                set_parts.append(f"{key} = ?")
-                values.append(val)
-
-        # Add WHERE clause value
-        values.append(op.record_id)
-
-        # Build UPDATE statement
-        set_clause = ",".join(set_parts)
-        sql = f"UPDATE {model_name} SET {set_clause} WHERE _record_id = ?"
-
-        cursor.execute(sql, values)
-
-    def _apply_tombstone(
-        self,
-        cursor: sqlite3.Cursor,
-        model_name: str,
-        op: OperationRecord,
-        timestamp_int: int,
-    ) -> None:
-        """
-        Apply a TOMBSTONE operation (mark row as deleted).
-
-        Args:
-            cursor: SQLite cursor
-            model_name: Name of the table
-            op: OperationRecord with op_type='tombstone'
-            timestamp_int: Timestamp as integer
-        """
-        sql = f"""
-            UPDATE {model_name}
-            SET _op_id = ?, _sequence = ?, _timestamp = ?, _head_cid = ?, _tombstoned = 1
-            WHERE _record_id = ?
-        """
-        cursor.execute(
-            sql,
-            (
-                op.op_id,
-                op.sequence_number,
-                timestamp_int,
-                op.previous_head_cid,
-                op.record_id,
-            ),
+            """
         )
