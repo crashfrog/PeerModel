@@ -7,7 +7,8 @@ Tests cover:
 - Operations returned in chronological order (ascending sequence_number)
 - Signature verification with invalid operations skipped
 - Concurrent fetch with semaphore limiting
-- LogIntegrityError raised on bad state (>10% invalid or non-contiguous sequences)
+- LogIntegrityError raised on bad state
+  (>10% invalid or non-contiguous sequences)
 - Edge cases: single operation, empty log, long chains
 """
 
@@ -186,7 +187,9 @@ class TestLogTraversalHappyPath:
         assert result[0].sequence_number == 1
 
     @pytest.mark.asyncio
-    async def test_traverse_single_operation(self, test_cohort, alice_identity):
+    async def test_traverse_single_operation(
+        self, test_cohort, alice_identity
+    ):
         """Traverse works with single operation (genesis)."""
         from peermodel.operations import traverse
 
@@ -263,10 +266,13 @@ class TestSignatureVerification:
 
         # Mock verify_operation to mark some as invalid
         def mock_verify(op):
-            # Mark operation 2 as invalid
+            # Mark operation 2 as invalid (sequence 3)
             return op.sequence_number != 3
 
-        with patch('peermodel.operations.verify_operation', side_effect=mock_verify):
+        with patch(
+            'peermodel.operations.verify_operation',
+            side_effect=mock_verify
+        ):
             result = await traverse(
                 head_cid=head_cid,
                 stop_at_cid=None,
@@ -290,7 +296,10 @@ class TestSignatureVerification:
         def mock_verify(op):
             return op.sequence_number != 3
 
-        with patch('peermodel.operations.verify_operation', side_effect=mock_verify):
+        with patch(
+            'peermodel.operations.verify_operation',
+            side_effect=mock_verify
+        ):
             await traverse(
                 head_cid=head_cid,
                 stop_at_cid=None,
@@ -300,8 +309,8 @@ class TestSignatureVerification:
             # Check for warning in logs
             # (exact message format depends on implementation)
             assert any(
-                "invalid" in record.message.lower() or
-                "signature" in record.message.lower()
+                "invalid" in record.message.lower()
+                or "signature" in record.message.lower()
                 for record in caplog.records
                 if record.levelname == "WARNING"
             )
@@ -423,7 +432,7 @@ class TestLogIntegrityError:
 
     @pytest.mark.asyncio
     async def test_traverse_raises_on_missing_cid(self):
-        """traverse() raises LogIntegrityError if CID not found after retries."""
+        """traverse() raises LogIntegrityError if CID not found."""
         from peermodel.operations import traverse
         from peermodel.exceptions import LogIntegrityError
 
@@ -465,12 +474,14 @@ class TestLogIntegrityError:
     async def test_traverse_raises_on_10_percent_invalid_signatures(
         self, alice_identity
     ):
-        """traverse() raises LogIntegrityError if >10% invalid signatures."""
+        """traverse() raises LogIntegrityError if >10% invalid sigs."""
         from peermodel.operations import traverse
         from peermodel.exceptions import LogIntegrityError
 
         # Create 20 operations
-        cohort = SimpleCohort(cohort_id="test", founder_identity=alice_identity)
+        cohort = SimpleCohort(
+            cohort_id="test", founder_identity=alice_identity
+        )
         operations = []
         previous_cid = None
 
@@ -500,7 +511,10 @@ class TestLogIntegrityError:
         def mock_verify(op):
             return op.sequence_number not in [5, 10, 15]
 
-        with patch('peermodel.operations.verify_operation', side_effect=mock_verify):
+        with patch(
+            'peermodel.operations.verify_operation',
+            side_effect=mock_verify
+        ):
             with pytest.raises(LogIntegrityError):
                 await traverse(
                     head_cid=operations[-1].ipfs_cid,
@@ -512,11 +526,13 @@ class TestLogIntegrityError:
     async def test_traverse_allows_under_10_percent_invalid(
         self, alice_identity
     ):
-        """traverse() succeeds if <10% invalid signatures."""
+        """traverse() succeeds if <10% invalid sigs."""
         from peermodel.operations import traverse
 
         # Create 20 operations
-        cohort = SimpleCohort(cohort_id="test", founder_identity=alice_identity)
+        cohort = SimpleCohort(
+            cohort_id="test", founder_identity=alice_identity
+        )
         operations = []
         previous_cid = None
 
@@ -546,7 +562,10 @@ class TestLogIntegrityError:
         def mock_verify(op):
             return op.sequence_number != 10
 
-        with patch('peermodel.operations.verify_operation', side_effect=mock_verify):
+        with patch(
+            'peermodel.operations.verify_operation',
+            side_effect=mock_verify
+        ):
             result = await traverse(
                 head_cid=operations[-1].ipfs_cid,
                 stop_at_cid=None,
