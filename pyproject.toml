@@ -56,4 +56,5 @@ find = {}
 [tool.pytest.ini_options]
 markers = [
     "hardware: marks tests that require real hardware tokens (deselect with '-m \"not hardware\"')",
+    "issue_10: marks tests for issue #10 (Cohort creation & initial KeyBundle)",
 ]
