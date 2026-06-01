@@ -194,8 +194,9 @@ class TestQueryWithComparisonOperators:
             filters={'price': ('<', 100)}
         )
 
-        assert len(results) == 1  # Mouse(25)
-        assert results[0]['price'] == 25
+        assert len(results) == 2  # Mouse(25), Keyboard(75)
+        for result in results:
+            assert result['price'] < 100
 
     def test_query_greater_than_or_equal_operator(self, peer, index_db, test_model):
         """Test query with >= operator."""
@@ -736,8 +737,7 @@ class TestFilterSyntax:
             filters={'price': ('>', 500)}
         )
 
-        assert len(results) == 2  # Laptop(1000), Desk(500) - wait Desk is 500 so not > 500
-        # Actually: Laptop(1000)
+        assert len(results) == 1  # Laptop(1000)
         assert all(r['price'] > 500 for r in results)
 
     def test_filter_comparison_operators_all_types(self, peer, index_db, test_model):
@@ -753,7 +753,7 @@ class TestFilterSyntax:
         # Less or equal
         lte = index_db.query(test_model, filters={'price': ('<=', 200)})
 
-        assert len(gt) == 4   # 1000, 300, 500, 200 - wait that's 3: 1000, 300, 500
+        assert len(gt) == 3   # 1000, 300, 500
         assert len(lt) == 2   # 25, 75
         assert len(gte) == 4  # 1000, 300, 500, 200
         assert len(lte) == 3  # 25, 75, 200
