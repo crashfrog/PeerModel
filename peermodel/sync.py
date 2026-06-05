@@ -5,7 +5,7 @@ apply them to the index, and update NodeState.
 """
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 import threading
 
@@ -194,7 +194,7 @@ class SyncManager:
             snapshot_cid=current_state.snapshot_cid if current_state else None,
             snapshot_sequence=current_state.snapshot_sequence if current_state else 0,
             index_status=current_state.index_status if current_state else "current",
-            last_sync_at=datetime.utcnow().isoformat() + "Z"
+            last_sync_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         )
 
         if self.index_db is not None:
