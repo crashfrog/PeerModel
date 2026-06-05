@@ -108,7 +108,7 @@ def insert_live_records(index_db, test_model):
 
     for rec_id, op_id, seq, name, value, desc in test_records:
         sql = """
-            INSERT INTO TestRecord  # noqa: E501
+            INSERT INTO TestRecord
             (_record_id, _op_id, _sequence, _timestamp, _head_cid,
              _tombstoned, _schema_version,
              name, value, description)
@@ -249,7 +249,7 @@ class TestSnapshotCreation:
 
         # Insert 3 live records
         sql = """
-            INSERT INTO TestRecord  # noqa: E501
+            INSERT INTO TestRecord
             (_record_id, _op_id, _sequence, _timestamp, _head_cid,
              _tombstoned, _schema_version,
              name, value, description)
@@ -563,12 +563,12 @@ class TestSnapshotSigning:
         cursor = conn.cursor()
         cursor.execute(
             """
-            INSERT INTO TestRecord  # noqa: E501
-            (_record_id, _op_id, _sequence, _timestamp, _head_cid, _tombstoned, _schema_version,  # noqa: E501
+            INSERT INTO TestRecord
+            (_record_id, _op_id, _sequence, _timestamp, _head_cid, _tombstoned, _schema_version,
              name, value, description)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            ('rec-1', 'op-1', 1, 1000000000, 'cid-1', 0, 1, 'Alice', 100, 'User 1')  # noqa: E501
+            ('rec-1', 'op-1', 1, 1000000000, 'cid-1', 0, 1, 'Alice', 100, 'User 1')
         )
         conn.commit()
         conn.close()
@@ -590,12 +590,12 @@ class TestSnapshotSigning:
         cursor = conn.cursor()
         cursor.execute(
             """
-            INSERT INTO TestRecord  # noqa: E501
-            (_record_id, _op_id, _sequence, _timestamp, _head_cid, _tombstoned, _schema_version,  # noqa: E501
+            INSERT INTO TestRecord
+            (_record_id, _op_id, _sequence, _timestamp, _head_cid, _tombstoned, _schema_version,
              name, value, description)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            ('rec-2', 'op-2', 2, 1000000000, 'cid-2', 0, 1, 'Bob', 200, 'User 2')  # noqa: E501
+            ('rec-2', 'op-2', 2, 1000000000, 'cid-2', 0, 1, 'Bob', 200, 'User 2')
         )
         conn.commit()
         conn.close()
@@ -814,8 +814,8 @@ class TestSnapshotWithTombstones:
         for i in range(1, 4):
             cursor.execute(
                 """
-                INSERT INTO TestRecord  # noqa: E501
-                (_record_id, _op_id, _sequence, _timestamp, _head_cid, _tombstoned, _schema_version,  # noqa: E501
+                INSERT INTO TestRecord
+                (_record_id, _op_id, _sequence, _timestamp, _head_cid, _tombstoned, _schema_version,
                  name, value, description)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -856,8 +856,8 @@ class TestSnapshotWithTombstones:
         for i in range(1, 3):
             cursor.execute(
                 """
-                INSERT INTO TestRecord  # noqa: E501
-                (_record_id, _op_id, _sequence, _timestamp, _head_cid, _tombstoned, _schema_version,  # noqa: E501
+                INSERT INTO TestRecord
+                (_record_id, _op_id, _sequence, _timestamp, _head_cid, _tombstoned, _schema_version,
                  name, value, description)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -869,8 +869,8 @@ class TestSnapshotWithTombstones:
         for i in range(3, 5):
             cursor.execute(
                 """
-                INSERT INTO TestRecord  # noqa: E501
-                (_record_id, _op_id, _sequence, _timestamp, _head_cid, _tombstoned, _schema_version,  # noqa: E501
+                INSERT INTO TestRecord
+                (_record_id, _op_id, _sequence, _timestamp, _head_cid, _tombstoned, _schema_version,
                  name, value, description)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
