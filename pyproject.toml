@@ -60,5 +60,4 @@ markers = [
     "issue_15: marks tests for CBOR serialization feature (issue #15)",
     "issue_20: marks tests for operation application to SQLite index (issue #20)",
     "issue_21: marks tests for IndexDB.query() interface (issue #21)",
-    "issue_22: marks tests for snapshot structure & creation (issue #22)",
 ]

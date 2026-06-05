@@ -324,6 +324,119 @@ class IndexDB:
             """
         )
 
+    def query(
+        self,
+        model_class: type,
+        filters: dict = None,
+        order_by: str = None,
+        limit: int = 0,
+        offset: int = 0,
+        include_tombstoned: bool = False
+    ) -> list:
+        """
+        Query records from the indexed table.
+
+        Args:
+            model_class: The model class to query
+            filters: Dict of {field: value} or {field: (operator, value)}
+                     where operator is one of '>', '<', '>=', '<='
+                     for comparison, or exact match for scalar values
+            order_by: Field name to order by; prefix with '-' for DESC
+            limit: Maximum number of rows to return (0 = no limit)
+            offset: Number of rows to skip
+            include_tombstoned: Whether to include tombstoned records
+                               (default: False)
+
+        Returns:
+            List of dicts representing query results
+        """
+        model_name = model_class.__name__
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row  # Return rows as dict-like objects
+        try:
+            cursor = conn.cursor()
+
+            # Build base query
+            where_clauses = []
+            params = []
+
+            # Add tombstoned filter (exclude by default)
+            if not include_tombstoned:
+                where_clauses.append("_tombstoned = 0")
+
+            # Add custom filters
+            if filters:
+                for field_name, filter_value in filters.items():
+                    if isinstance(filter_value, tuple):
+                        # Comparison operator syntax: (operator, value)
+                        operator, value = filter_value
+                        # Convert boolean values to 0/1 for SQLite
+                        if isinstance(value, bool):
+                            value = 1 if value else 0
+                        where_clauses.append(f"{field_name} {operator} ?")
+                        params.append(value)
+                    else:
+                        # Exact match syntax
+                        # Convert boolean values to 0/1 for SQLite
+                        if isinstance(filter_value, bool):
+                            filter_value = 1 if filter_value else 0
+                        where_clauses.append(f"{field_name} = ?")
+                        params.append(filter_value)
+
+            # Build WHERE clause
+            where_clause = ""
+            if where_clauses:
+                where_clause = " WHERE " + " AND ".join(where_clauses)
+
+            # Build ORDER BY clause
+            order_clause = ""
+            if order_by:
+                if order_by.startswith('-'):
+                    # Descending order
+                    field_name = order_by[1:]
+                    order_clause = f" ORDER BY {field_name} DESC"
+                else:
+                    # Ascending order
+                    order_clause = f" ORDER BY {order_by} ASC"
+
+            # Build LIMIT/OFFSET clause
+            limit_clause = ""
+            if limit > 0:
+                limit_clause = f" LIMIT {limit}"
+            if offset > 0:
+                # SQLite requires LIMIT when using OFFSET
+                # Use a very large number if limit is not specified
+                if limit <= 0:
+                    limit_clause = f" LIMIT 9223372036854775807"  # max int64
+                limit_clause += f" OFFSET {offset}"
+
+            # Build final query
+            query = f"SELECT * FROM {model_name}{where_clause}{order_clause}{limit_clause}"
+
+            # Execute query
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+
+            # Convert rows to list of dicts and convert booleans
+            results = []
+            for row in rows:
+                row_dict = dict(row)
+                # Convert boolean fields back from 0/1 to True/False
+                try:
+                    model_fields = dataclass_fields(model_class)
+                    for field in model_fields:
+                        if field.name in row_dict and field.type is bool:
+                            # Convert 0/1 to False/True
+                            row_dict[field.name] = bool(row_dict[field.name])
+                except TypeError:
+                    # Not a dataclass, skip conversion
+                    pass
+                results.append(row_dict)
+            return results
+
+        finally:
+            conn.close()
+
     def apply_operation(self, operation) -> None:
         """
         Apply an operation to the index.
