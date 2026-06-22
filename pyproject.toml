@@ -61,4 +61,5 @@ markers = [
     "issue_20: marks tests for operation application to SQLite index (issue #20)",
     "issue_21: marks tests for IndexDB.query() interface (issue #21)",
     "issue_22: marks tests for snapshot structure & creation (issue #22)",
+    "issue_35: marks tests for migration status CLI command (issue #35)",
 ]

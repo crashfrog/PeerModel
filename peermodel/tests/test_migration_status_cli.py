@@ -115,6 +115,7 @@ def cli_runner():
     return CliRunner()
 
 
+@pytest.mark.issue_35
 def test_query_version_distribution_from_sqlite(populated_db):
     """Query version distribution per record type from SQLite index.
 
@@ -143,6 +144,7 @@ def test_query_version_distribution_from_sqlite(populated_db):
     assert distribution["SequenceRun"]["2.0.0"] == 1
 
 
+@pytest.mark.issue_35
 def test_query_version_distribution_excludes_tombstoned(test_db):
     """Version distribution should exclude tombstoned records.
 
@@ -176,6 +178,7 @@ def test_query_version_distribution_excludes_tombstoned(test_db):
     assert distribution["SampleRecord"]["1.0.0"] == 1
 
 
+@pytest.mark.issue_35
 def test_display_version_counts_and_percentages(cli_runner, populated_db):
     """Display version counts with percentages for each record type.
 
@@ -208,6 +211,7 @@ def test_display_version_counts_and_percentages(cli_runner, populated_db):
     assert "%" in result.output
 
 
+@pytest.mark.issue_35
 def test_show_available_migration_paths(cli_runner, populated_db):
     """Show available migration paths for each version.
 
@@ -235,6 +239,7 @@ def test_show_available_migration_paths(cli_runner, populated_db):
                ['path', 'migration', 'available', 'upgrade', 'migrate to'])
 
 
+@pytest.mark.issue_35
 def test_report_estimated_records_to_migrate(cli_runner, populated_db):
     """Report estimated number of records needing migration.
 
@@ -262,6 +267,7 @@ def test_report_estimated_records_to_migrate(cli_runner, populated_db):
     assert any(str(num) in result.output for num in [2, 3, 5])
 
 
+@pytest.mark.issue_35
 def test_cli_output_format_table(cli_runner, populated_db):
     """Output should be formatted as a readable table.
 
@@ -293,6 +299,7 @@ def test_cli_output_format_table(cli_runner, populated_db):
     assert has_formatting or "Record Type" in result.output
 
 
+@pytest.mark.issue_35
 def test_cli_output_format_json_option(cli_runner, populated_db):
     """Support JSON output format for programmatic use.
 
@@ -313,6 +320,7 @@ def test_cli_output_format_json_option(cli_runner, populated_db):
     assert "SampleRecord" in data or "record_types" in data
 
 
+@pytest.mark.issue_35
 def test_status_with_no_records(cli_runner, test_db):
     """Handle empty database gracefully.
 
@@ -330,6 +338,7 @@ def test_status_with_no_records(cli_runner, test_db):
                ['no records', 'empty', '0 records'])
 
 
+@pytest.mark.issue_35
 def test_status_with_single_version(cli_runner, test_db):
     """Handle database where all records are at same version.
 
@@ -368,6 +377,7 @@ def test_status_with_single_version(cli_runner, test_db):
     )
 
 
+@pytest.mark.issue_35
 def test_status_migration_path_with_engine(cli_runner, populated_db, monkeypatch):
     """Show migration paths using actual MigrationEngine.
 
@@ -398,6 +408,7 @@ def test_status_migration_path_with_engine(cli_runner, populated_db, monkeypatch
     assert "->" in result.output or "→" in result.output
 
 
+@pytest.mark.issue_35
 def test_status_with_missing_migration_path(cli_runner, populated_db, monkeypatch):
     """Indicate when no migration path exists.
 
@@ -427,6 +438,7 @@ def test_status_with_missing_migration_path(cli_runner, populated_db, monkeypatc
                ['no path', 'missing', 'unavailable', 'warning', 'error'])
 
 
+@pytest.mark.issue_35
 def test_status_filters_by_record_type(cli_runner, populated_db):
     """Support filtering status by record type.
 
@@ -447,6 +459,7 @@ def test_status_filters_by_record_type(cli_runner, populated_db):
     assert "SequenceRun" not in result.output
 
 
+@pytest.mark.issue_35
 def test_status_shows_latest_version_per_type(cli_runner, populated_db):
     """Indicate the latest version for each record type.
 
@@ -470,6 +483,7 @@ def test_status_shows_latest_version_per_type(cli_runner, populated_db):
     assert "2.1.0" in result.output or "2.0.0" in result.output
 
 
+@pytest.mark.issue_35
 def test_query_version_distribution_implementation():
     """Implementation detail test for query_version_distribution function.
 
@@ -509,6 +523,7 @@ def test_query_version_distribution_implementation():
         assert result["TestModel"]["2.0.0"] == 1
 
 
+@pytest.mark.issue_35
 def test_status_command_requires_db_path(cli_runner):
     """Command should fail gracefully without database path.
 
@@ -526,6 +541,7 @@ def test_status_command_requires_db_path(cli_runner):
                ['required', 'missing', 'database', '--db'])
 
 
+@pytest.mark.issue_35
 def test_status_handles_nonexistent_db(cli_runner, tmp_path):
     """Command should fail gracefully for nonexistent database.
 
@@ -536,9 +552,11 @@ def test_status_handles_nonexistent_db(cli_runner, tmp_path):
     fake_db = tmp_path / "nonexistent.db"
     result = cli_runner.invoke(cli, ['migrate', 'status', '--db', str(fake_db)])
 
-    # Should fail with helpful error
+    # Should fail with helpful error — "No such command 'migrate'" does NOT count;
+    # the error must name the missing file, not the missing command.
     assert result.exit_code != 0
+    assert "No such command" not in result.output
 
     output_lower = result.output.lower()
     assert any(keyword in output_lower for keyword in
-               ['not found', 'does not exist', 'error'])
+               ['not found', 'does not exist'])
