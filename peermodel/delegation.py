@@ -545,6 +545,87 @@ def add_member(
     )
 
 
+def expel_member(
+    keybundle: KeyBundle,
+    expelled_member_id: str,
+    remaining_member_identities: list,
+    initiator_identity: dict,
+) -> tuple:
+    """Expel a member from a cohort with forward secrecy.
+
+    Generates a fresh cohort keypair and re-distributes only to remaining members,
+    excluding the expelled member.
+
+    Args:
+        keybundle: Current KeyBundle with existing member entries
+        expelled_member_id: ID of the member to remove
+        remaining_member_identities: List of remaining member identity dicts,
+            each with 'member_id' and 'x25519_public'
+        initiator_identity: Identity dict of the member initiating expulsion
+            (must be in the current keybundle)
+
+    Returns:
+        tuple: (CohortIdentity, KeyBundle, bytes)
+            - CohortIdentity: New cohort identity with fresh keypair
+            - KeyBundle: New bundle with entries for remaining members only
+            - bytes: CBOR-serialized new cohort private key material
+
+    Raises:
+        ValueError: If expelled_member_id or initiator not found in keybundle
+    """
+    existing_ids = {e.member_id for e in keybundle.entries}
+
+    if expelled_member_id not in existing_ids:
+        raise ValueError(f"{expelled_member_id} is not a member of the cohort")
+
+    initiator_id = initiator_identity['member_id']
+    if initiator_id not in existing_ids:
+        raise ValueError(f"{initiator_id} is not an existing member of the cohort")
+
+    # Generate fresh cohort keypair (forward secrecy)
+    cohort_x25519_priv, cohort_x25519_pub, cohort_ed25519_priv, cohort_ed25519_pub = primitives.generate_keypair()
+
+    new_identity = CohortIdentity(
+        cohort_id=keybundle.cohort_id,
+        signing_public_key=cohort_ed25519_pub,
+        signing_algorithm=keybundle.signing_alg,
+        encryption_public_key=cohort_x25519_pub,
+        encryption_algorithm=keybundle.encryption_alg,
+        created_at=datetime.now(),
+        keybundle_cid=None,
+    )
+
+    cohort_key_material = {
+        'x25519_private': cohort_x25519_priv,
+        'ed25519_private': cohort_ed25519_priv,
+    }
+    new_cohort_private_key_bytes = primitives.serialize_to_cbor(cohort_key_material)
+
+    new_entries = []
+    for member in remaining_member_identities:
+        encrypted_key_material, nonce, tag, ephemeral_public_key = primitives.encrypt_to_recipient(
+            new_cohort_private_key_bytes,
+            member['x25519_public'],
+        )
+        new_entries.append(KeyBundleEntry(
+            member_id=member['member_id'],
+            encrypted_key_material=encrypted_key_material,
+            ephemeral_public_key_der=ephemeral_public_key,
+            nonce=nonce,
+            tag=tag,
+        ))
+
+    new_keybundle = KeyBundle(
+        cohort_id=keybundle.cohort_id,
+        version=keybundle.version + 1,
+        signing_alg=keybundle.signing_alg,
+        encryption_alg=keybundle.encryption_alg,
+        entries=new_entries,
+    )
+
+    return (new_identity, new_keybundle, new_cohort_private_key_bytes)
+
+
 def get_cohort_private_key(
     keybundle: KeyBundle,
     member_id: str,
