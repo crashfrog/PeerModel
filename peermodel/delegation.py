@@ -493,6 +493,58 @@ def create_cohort(cohort_id: str, founder_identity: dict) -> tuple:
     return (cohort_identity, keybundle, cohort_private_key_bytes)
 
 
+def add_member(
+    keybundle: KeyBundle,
+    new_member_identity: dict,
+    initiator_identity: dict,
+    cohort_private_key_bytes: bytes,
+) -> KeyBundle:
+    """Add a new member to a cohort by encrypting the cohort key to them.
+
+    Args:
+        keybundle: Current KeyBundle with existing member entries
+        new_member_identity: New member's identity dict with 'member_id' and 'x25519_public'
+        initiator_identity: Initiating member's identity dict (must already be in keybundle)
+        cohort_private_key_bytes: CBOR-serialized cohort private key bytes to encrypt
+
+    Returns:
+        KeyBundle: Updated bundle with new member entry appended and version incremented
+
+    Raises:
+        ValueError: If initiator is not in keybundle or new member is already in keybundle
+    """
+    existing_ids = {e.member_id for e in keybundle.entries}
+
+    initiator_id = initiator_identity['member_id']
+    if initiator_id not in existing_ids:
+        raise ValueError(f"{initiator_id} is not an existing member of the cohort")
+
+    new_member_id = new_member_identity['member_id']
+    if new_member_id in existing_ids:
+        raise ValueError(f"{new_member_id} is already a member of the cohort")
+
+    encrypted_key_material, nonce, tag, ephemeral_public_key = primitives.encrypt_to_recipient(
+        cohort_private_key_bytes,
+        new_member_identity['x25519_public'],
+    )
+
+    new_entry = KeyBundleEntry(
+        member_id=new_member_id,
+        encrypted_key_material=encrypted_key_material,
+        ephemeral_public_key_der=ephemeral_public_key,
+        nonce=nonce,
+        tag=tag,
+    )
+
+    return KeyBundle(
+        cohort_id=keybundle.cohort_id,
+        version=keybundle.version + 1,
+        signing_alg=keybundle.signing_alg,
+        encryption_alg=keybundle.encryption_alg,
+        entries=list(keybundle.entries) + [new_entry],
+    )
+
+
 def get_cohort_private_key(
     keybundle: KeyBundle,
     member_id: str,
