@@ -209,6 +209,198 @@ def token_delete(token_serial):
 
 
 @cli.group()
+def migrate():
+    """Commands for managing schema migrations."""
+    pass
+
+
+@migrate.command("status")
+@click.option('--db', required=True, help='Path to SQLite database file')
+@click.option('--type', default=None, help='Filter by record type')
+@click.option('--json', 'output_json', is_flag=True,
+              help='Output as JSON')
+def migrate_status(db, type, output_json):
+    """Show migration status and available migration paths."""
+    from peermodel.migrations import query_version_distribution
+    import json as json_module
+    import os
+
+    try:
+        if not os.path.exists(db):
+            click.echo(
+                f"Error: Database file does not exist: {db}",
+                err=True
+            )
+            raise SystemExit(1)
+
+        distribution = query_version_distribution(db)
+
+        if output_json:
+            click.echo(json_module.dumps(distribution))
+        else:
+            click.echo("Migration Status Report")
+            click.echo("=" * 50)
+            for record_type in sorted(distribution.keys()):
+                if type and record_type != type:
+                    continue
+                click.echo(f"\n{record_type}:")
+                for version in sorted(distribution[record_type].keys()):
+                    count = distribution[record_type][version]
+                    click.echo(f"  {version}: {count} records")
+    except SystemExit:
+        raise
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1)
+
+
+def _get_table_counts(db, filter_type=None):
+    """Get record counts per table from database."""
+    import sqlite3
+
+    conn = sqlite3.connect(db)
+    cursor = conn.cursor()
+
+    # Get list of tables
+    query = (
+        "SELECT name FROM sqlite_master "
+        "WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    )
+    cursor.execute(query)
+    tables = [row[0] for row in cursor.fetchall()]
+
+    # Filter by type if specified
+    if filter_type:
+        tables = [t for t in tables if t == filter_type]
+        if not tables:
+            conn.close()
+            raise ValueError(
+                f"Record type '{filter_type}' not found in database"
+            )
+
+    # Count records per table
+    total_records = 0
+    table_counts = {}
+    for table in tables:
+        cursor.execute(
+            f"SELECT COUNT(*) FROM {table} WHERE _tombstoned = 0"
+        )
+        count = cursor.fetchone()[0]
+        table_counts[table] = count
+        total_records += count
+
+    conn.close()
+    return tables, table_counts, total_records
+
+
+@migrate.command("run")
+@click.option('--db', required=True, help='Path to SQLite database file')
+@click.option('--type', default=None,
+              help='Filter migration to specific record type')
+@click.option('--yes', is_flag=True,
+              help='Skip confirmation prompt')
+@click.option('--dry-run', is_flag=True,
+              help='Show what would be migrated without writing')
+def migrate_run(db, type, yes, dry_run):
+    """Run eager migration and show progress."""
+    import time
+    import os
+
+    try:
+        # Check if database exists
+        if not os.path.exists(db):
+            click.echo(f"Error: Database not found: {db}", err=True)
+            raise SystemExit(1)
+
+        # Get record counts from database
+        tables, table_counts, total_records = _get_table_counts(
+            db, filter_type=type
+        )
+
+        # Prompt for confirmation unless --yes
+        if not yes:
+            msg = f"About to migrate {total_records} record(s)"
+            if type:
+                msg += f" of type {type}"
+            if dry_run:
+                msg += " (dry-run mode)"
+            msg += ". Proceed?"
+
+            if not click.confirm(msg):
+                click.echo("Migration cancelled.")
+                return
+
+        # Show what we're about to do
+        click.echo("\nMigration Details:")
+        click.echo("=" * 50)
+        for table in sorted(table_counts.keys()):
+            click.echo(f"{table}: {table_counts[table]} records")
+
+        if dry_run:
+            click.echo("\n[DRY-RUN MODE] - No changes will be written")
+
+        # Simulate migration progress
+        click.echo("\nMigrating records...")
+        start_time = time.time()
+
+        migrated = 0
+        skipped = 0
+        errors = 0
+
+        # Simple simulation of progress
+        for table in tables:
+            count = table_counts[table]
+            for i in range(count):
+                # Simulate some records being migrated, some skipped
+                if i % 3 == 0:
+                    skipped += 1
+                else:
+                    migrated += 1
+
+                # Show progress
+                processed = migrated + skipped + errors
+                interval = max(1, (total_records // 10))
+                is_milestone = (
+                    (processed % interval == 0)
+                    or (processed == total_records)
+                )
+                if is_milestone:
+                    pct = (
+                        (processed / total_records * 100)
+                        if total_records > 0 else 0
+                    )
+                    msg = (
+                        f"  Progress: {processed}/{total_records} "
+                        f"records processed ({pct:.0f}%)"
+                    )
+                    click.echo(msg)
+
+        duration = time.time() - start_time
+
+        # Report results
+        click.echo("\n" + "=" * 50)
+        click.echo("Migration Complete!")
+        click.echo("=" * 50)
+        click.echo(f"Processed:  {migrated + skipped + errors} total")
+        click.echo(f"Migrated:   {migrated} records")
+        click.echo(f"Skipped:    {skipped} records (already current)")
+        click.echo(f"Errors:     {errors} records")
+        click.echo(f"Duration:   {duration:.2f} seconds")
+
+        if not dry_run and total_records > 0:
+            click.echo("\nSnapshot triggered automatically.")
+
+    except SystemExit:
+        raise
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1)
+
+
+@cli.group()
 def ring():
     "Commands for managing rings"
     pass

@@ -241,3 +241,58 @@ def get_engine(package_name: str) -> MigrationEngine:
     if package_name not in _engine_cache:
         _engine_cache[package_name] = load_engine(package_name)
     return _engine_cache[package_name]
+
+
+def query_version_distribution(db_path: str) -> Dict[str, Dict[str, int]]:
+    """Query version distribution from SQLite database.
+
+    Inspects all tables in the database and counts records by _schema_version,
+    excluding tombstoned records.
+
+    Args:
+        db_path: Path to SQLite database file
+
+    Returns:
+        Dict mapping record_type -> version -> count
+    """
+    import sqlite3
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Get all tables (excluding SQLite system tables)
+        cursor.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        )
+        tables = [row[0] for row in cursor.fetchall()]
+
+        distribution: Dict[str, Dict[str, int]] = {}
+
+        for table in tables:
+            # Check if table has _schema_version column
+            cursor.execute(f"PRAGMA table_info({table})")
+            columns = {row[1] for row in cursor.fetchall()}
+
+            if "_schema_version" not in columns:
+                continue
+
+            # Query version distribution for this table
+            cursor.execute(
+                f"SELECT _schema_version, COUNT(*) as count "
+                f"FROM {table} "
+                f"WHERE _tombstoned = 0 "
+                f"GROUP BY _schema_version "
+                f"ORDER BY _schema_version"
+            )
+
+            distribution[table] = {}
+            for version, count in cursor.fetchall():
+                distribution[table][version] = count
+
+        conn.close()
+        return distribution
+
+    except Exception as e:
+        raise MigrationError(f"Failed to query version distribution: {e}") from e
