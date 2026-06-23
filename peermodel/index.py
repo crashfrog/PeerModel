@@ -437,6 +437,30 @@ class IndexDB:
         finally:
             conn.close()
 
+    def apply_snapshot(self, snapshot) -> None:
+        """Apply a snapshot to the index by inserting all snapshot records.
+
+        Uses INSERT OR REPLACE so the call is idempotent and safe even if
+        some records already exist (e.g., partial cold start retries).
+
+        Args:
+            snapshot: Snapshot whose records are written to the index table
+        """
+        table_name = snapshot.record_type
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            for record in snapshot.records:
+                columns = ', '.join(record.keys())
+                placeholders = ', '.join(['?' for _ in record])
+                cursor.execute(
+                    f"INSERT OR REPLACE INTO {table_name} ({columns}) VALUES ({placeholders})",
+                    list(record.values()),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
     def apply_operation(self, operation) -> None:
         """
         Apply an operation to the index.
