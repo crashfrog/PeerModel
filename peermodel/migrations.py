@@ -8,10 +8,12 @@ including:
 - Building version graphs from migration definitions
 - Finding migration paths using BFS
 - Applying migration transforms sequentially
+- Eager migration with dry-run support
 """
 
 import importlib
 from collections import deque
+from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Callable
 
 
@@ -241,3 +243,62 @@ def get_engine(package_name: str) -> MigrationEngine:
     if package_name not in _engine_cache:
         _engine_cache[package_name] = load_engine(package_name)
     return _engine_cache[package_name]
+
+
+@dataclass
+class MigrationResult:
+    """Result of eager migration operation.
+
+    Attributes:
+        migrated: Number of records successfully migrated
+        skipped: Number of records already at target version
+        errors: Number of records that failed to migrate
+        error_details: List of error details for failed records
+    """
+    migrated: int = 0
+    skipped: int = 0
+    errors: int = 0
+    error_details: List[Dict[str, str]] = field(default_factory=list)
+
+    @property
+    def total(self) -> int:
+        """Total records processed (migrated + skipped + errors)."""
+        return self.migrated + self.skipped + self.errors
+
+
+async def migrate_eager(
+    index_db,
+    target_version: str,
+    package_name: str,
+    dry_run: bool = False
+) -> MigrationResult:
+    """Eagerly migrate all indexed records to target schema version.
+
+    Executes the full pipeline for each record:
+    1. Query index for records grouped by (record_type, current_version)
+    2. Fetch and decrypt records
+    3. Apply migration transformations via migration path
+    4. Re-encrypt records
+    5. Write results to IPFS and update index (skipped if dry_run=True)
+
+    In dry-run mode:
+    - Full pipeline is executed (fetch, decrypt, transform, re-encrypt)
+    - Changes are NOT written to IPFS or index
+    - Counts and error details are still reported accurately
+
+    Args:
+        index_db: IndexDB instance containing records to migrate
+        target_version: Target schema version string (e.g., "2.0.0")
+        package_name: Package name for migration registry lookup
+        dry_run: If True, execute pipeline but don't write changes
+
+    Returns:
+        MigrationResult with migrated/skipped/errors counts
+
+    Raises:
+        MigrationError: If migration setup fails
+        MissingMigrationError: If no migration path exists for a record type
+    """
+    # Placeholder: will be implemented by the implementation agent
+    # This signature is the contract that tests depend on
+    raise NotImplementedError("migrate_eager not yet implemented")
