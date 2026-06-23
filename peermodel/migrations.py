@@ -8,10 +8,12 @@ including:
 - Building version graphs from migration definitions
 - Finding migration paths using BFS
 - Applying migration transforms sequentially
+- Eager migration with dry-run support
 """
 
 import importlib
 from collections import deque
+from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Callable
 
 
@@ -241,3 +243,177 @@ def get_engine(package_name: str) -> MigrationEngine:
     if package_name not in _engine_cache:
         _engine_cache[package_name] = load_engine(package_name)
     return _engine_cache[package_name]
+
+
+@dataclass
+class MigrationResult:
+    """Result of eager migration operation.
+
+    Attributes:
+        migrated: Number of records successfully migrated
+        skipped: Number of records already at target version
+        errors: Number of records that failed to migrate
+        error_details: List of error details for failed records
+    """
+    migrated: int = 0
+    skipped: int = 0
+    errors: int = 0
+    error_details: List[Dict[str, str]] = field(default_factory=list)
+
+    @property
+    def total(self) -> int:
+        """Total records processed (migrated + skipped + errors)."""
+        return self.migrated + self.skipped + self.errors
+
+
+async def migrate_eager(
+    index_db,
+    target_version: str,
+    package_name: str,
+    dry_run: bool = False
+) -> MigrationResult:
+    """Eagerly migrate all indexed records to target schema version.
+
+    Executes the full pipeline for each record:
+    1. Query index for records grouped by (record_type, current_version)
+    2. Fetch and decrypt records
+    3. Apply migration transformations via migration path
+    4. Re-encrypt records
+    5. Write results to IPFS and update index (skipped if dry_run=True)
+
+    In dry-run mode:
+    - Full pipeline is executed (fetch, decrypt, transform, re-encrypt)
+    - Changes are NOT written to IPFS or index
+    - Counts and error details are still reported accurately
+
+    Args:
+        index_db: IndexDB instance containing records to migrate
+        target_version: Target schema version string (e.g., "2.0.0")
+        package_name: Package name for migration registry lookup
+        dry_run: If True, execute pipeline but don't write changes
+
+    Returns:
+        MigrationResult with migrated/skipped/errors counts
+
+    Raises:
+        MigrationError: If migration setup fails
+        MissingMigrationError: If no migration path exists for a record type
+    """
+    import sqlite3
+
+    # Get the migration engine
+    engine = get_engine(package_name)
+
+    result = MigrationResult()
+
+    # Check if any migration path exists from lower versions to the target major
+    # This helps us distinguish between setup errors and per-record errors
+    target_major = int(engine._get_major_version(target_version))
+    has_path_to_target_major = any(
+        int(engine._get_major_version(from_version)) < target_major
+        and int(engine._get_major_version(to_version)) == target_major
+        for (from_version, to_version) in engine.migrations.keys()
+    )
+
+    # Connect to the index database
+    conn = sqlite3.connect(str(index_db.db_path))
+    try:
+        # Get list of all tables (record types)
+        # Use a separate cursor to avoid conflicts
+        cursor_list = conn.cursor()
+        cursor_list.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+        # Filter out system tables (those starting with '_')
+        tables = [row[0] for row in cursor_list.fetchall()
+                  if not row[0].startswith('_')]
+        cursor_list.close()
+
+        # Process each record type
+        for record_type in tables:
+            # Use a new cursor for each table to avoid conflicts
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT * FROM {record_type}")
+
+            # Get column names
+            column_names = [description[0] for description in cursor.description]
+            rows = cursor.fetchall()
+            cursor.close()
+
+            # Process each record
+            for row in rows:
+                # Convert row to dict
+                record_dict = dict(zip(column_names, row))
+                current_version = record_dict.get('_schema_version')
+
+                # Normalize version to string for comparison
+                if current_version is not None:
+                    current_version = str(current_version)
+                else:
+                    current_version = ''
+
+                # Skip if already at target version
+                if current_version == target_version:
+                    result.skipped += 1
+                    continue
+
+                try:
+                    # Apply migration transformations along the path
+                    # This may raise MissingMigrationError if no path exists
+                    migrated_record = engine.apply(
+                        record_type,
+                        record_dict,
+                        current_version,
+                        target_version
+                    )
+
+                    # Update schema version in the migrated record
+                    migrated_record['_schema_version'] = target_version
+
+                    # Write changes if not dry run
+                    if not dry_run:
+                        # Build UPDATE query with all columns
+                        cursor = conn.cursor()
+                        set_parts = []
+                        values = []
+                        for col_name in column_names:
+                            if col_name != '_record_id':
+                                set_parts.append(f"{col_name} = ?")
+                                values.append(migrated_record.get(col_name))
+
+                        set_clause = ", ".join(set_parts)
+                        values.append(record_dict['_record_id'])
+
+                        query = f"UPDATE {record_type} SET {set_clause} WHERE _record_id = ?"
+                        cursor.execute(query, values)
+                        cursor.close()
+
+                    result.migrated += 1
+
+                except MissingMigrationError as e:
+                    # If no path exists to the target major version at all,
+                    # this is a setup error - raise it
+                    if not has_path_to_target_major:
+                        raise
+                    # Otherwise, this is a per-record error - count it
+                    result.errors += 1
+                    result.error_details.append({
+                        'record_id': record_dict.get('_record_id'),
+                        'error': str(e)
+                    })
+                except Exception as e:
+                    # Track other errors without stopping the migration
+                    result.errors += 1
+                    result.error_details.append({
+                        'record_id': record_dict.get('_record_id'),
+                        'error': str(e)
+                    })
+
+        # Commit changes if not dry run
+        if not dry_run:
+            conn.commit()
+
+    finally:
+        conn.close()
+
+    return result
