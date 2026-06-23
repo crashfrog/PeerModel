@@ -1,7 +1,10 @@
 import click
 from peermodel import with_database
+from peermodel.migrations import query_version_distribution
 import json
 import logging
+import os
+from pathlib import Path
 
 
 ## https://click.palletsprojects.com/en/8.1.x/
@@ -206,6 +209,166 @@ def token_delete(token_serial):
             click.echo(f"Token {token_serial} not found in config", err=True)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
+
+
+@cli.group()
+def migrate():
+    "Commands for managing schema migrations"
+    pass
+
+
+def _compute_migration_paths(version_dist, engine=None):
+    """Compute migration paths for each version."""
+    paths = {}
+    for record_type, versions_dict in version_dist.items():
+        paths[record_type] = {}
+        if not versions_dict:
+            continue
+
+        # Find latest version
+        latest_version = max(versions_dict.keys(), key=lambda v: tuple(map(int, v.split('.'))))
+
+        for version in versions_dict.keys():
+            if version == latest_version:
+                paths[record_type][version] = []
+            else:
+                # Try to find path using engine
+                if engine:
+                    try:
+                        path = engine.find_path(version, latest_version)
+                        paths[record_type][version] = path
+                    except Exception:
+                        paths[record_type][version] = None
+                else:
+                    paths[record_type][version] = None
+
+    return paths
+
+
+@migrate.command("status")
+@click.option('--db', required=False, type=click.Path(exists=False),
+              help='Path to SQLite database')
+@click.option('--json', 'output_json', is_flag=True,
+              help='Output as JSON')
+@click.option('--type', 'record_type', default=None,
+              help='Filter by record type')
+def migrate_status(db, output_json, record_type):
+    "Show migration status and version distribution"
+    from peermodel.migrations import get_engine
+
+    try:
+        # Query version distribution (db can be None)
+        if db is not None and not os.path.exists(db):
+            click.echo(f"Error: database file not found: {db}", err=True)
+            raise SystemExit(1)
+
+        version_dist = query_version_distribution(db)
+
+        # Filter by record type if specified
+        if record_type:
+            if record_type not in version_dist:
+                click.echo(f"Error: record type '{record_type}' not found", err=True)
+                raise SystemExit(1)
+            version_dist = {record_type: version_dist[record_type]}
+
+        # Get migration engine
+        try:
+            engine = get_engine('peermodel')
+        except Exception as e:
+            # Re-raise to be caught by outer exception handler
+            raise RuntimeError(f"Failed to load migration engine: {e}") from e
+
+        # Compute migration paths
+        migration_paths = _compute_migration_paths(version_dist, engine)
+
+        if output_json:
+            # JSON output
+            output_data = {}
+            for rec_type, versions_dict in version_dist.items():
+                if not versions_dict:
+                    output_data[rec_type] = {}
+                    continue
+
+                total = sum(versions_dict.values())
+                output_data[rec_type] = {}
+
+                for version, count in sorted(versions_dict.items()):
+                    percentage = (count / total * 100) if total > 0 else 0
+                    path_info = migration_paths.get(rec_type, {}).get(version)
+
+                    output_data[rec_type][version] = {
+                        'count': count,
+                        'percentage': round(percentage, 2),
+                        'migration_path': path_info if path_info is not None else 'No path'
+                    }
+
+            click.echo(json.dumps(output_data, indent=2))
+        else:
+            # Text output
+            if not version_dist or not any(version_dist.values()):
+                click.echo("No records found in database.")
+                return
+
+            total_records_to_migrate = 0
+
+            for rec_type in sorted(version_dist.keys()):
+                versions_dict = version_dist[rec_type]
+                if not versions_dict:
+                    click.echo(f"\n{rec_type}: No records found")
+                    continue
+
+                # Header
+                click.echo(f"\n{rec_type}:")
+                click.echo(f"{'Version':<15} {'Count':<10} {'Percentage':<12} {'Migration Path':<30}")
+                click.echo("-" * 70)
+
+                total = sum(versions_dict.values())
+                versions_sorted = sorted(versions_dict.keys())
+                latest_version = versions_sorted[-1]
+
+                records_at_old_versions = 0
+
+                for version in versions_sorted:
+                    count = versions_dict[version]
+                    percentage = (count / total * 100) if total > 0 else 0
+
+                    # Get migration path
+                    path = migration_paths.get(rec_type, {}).get(version)
+                    if path is None:
+                        path_str = "NO PATH"
+                    elif path == []:
+                        path_str = "Latest version" if version == latest_version else "Ready"
+                    else:
+                        # Format path
+                        path_steps = [version]
+                        for from_v, to_v in path:
+                            path_steps.append(to_v)
+                        path_str = " -> ".join(path_steps)
+
+                    click.echo(f"{version:<15} {count:<10} {percentage:>10.2f}%  {path_str:<30}")
+
+                    # Count records needing migration
+                    if version != latest_version:
+                        records_at_old_versions += count
+
+                total_records_to_migrate += records_at_old_versions
+
+                # Summary
+                if records_at_old_versions > 0:
+                    click.echo(f"\n{records_at_old_versions} records need migration to {latest_version}")
+                else:
+                    click.echo(f"\nAll records are at latest version ({latest_version})")
+
+            # Overall summary
+            if total_records_to_migrate > 0:
+                click.echo(f"\nTotal: {total_records_to_migrate} records need migration")
+            else:
+                click.echo("\nAll records are up to date!")
+
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1)
+
 
 
 @cli.group()
