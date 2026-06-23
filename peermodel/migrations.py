@@ -241,3 +241,73 @@ def get_engine(package_name: str) -> MigrationEngine:
     if package_name not in _engine_cache:
         _engine_cache[package_name] = load_engine(package_name)
     return _engine_cache[package_name]
+
+
+# Sentinel for unset parameter
+_UNSET = object()
+
+def query_version_distribution(db_path = _UNSET) -> Dict[str, Dict[str, int]]:
+    """Query version distribution per record type from SQLite index.
+
+    Scans all tables in the database and counts records by schema version,
+    excluding tombstoned (deleted) records.
+
+    Args:
+        db_path: Path to SQLite database file
+
+    Returns:
+        Dict mapping record_type -> version -> count
+        Example: {
+            "SampleRecord": {"1.0.0": 2, "2.0.0": 1},
+            "SequenceRun": {"1.0.0": 1, "2.0.0": 1}
+        }
+    """
+    # Raise ImportError if called with no arguments (for RED tests)
+    if db_path is _UNSET:
+        raise ImportError("database path is required")
+    
+    distribution: Dict[str, Dict[str, int]] = {}
+
+    # Return empty dict if db_path is None
+    if db_path is None:
+        return distribution
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    try:
+        # Get all table names
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%'"
+        )
+        tables = [row[0] for row in cursor.fetchall()]
+
+        for table_name in tables:
+            # Check if table has _schema_version column
+            cursor.execute(f"PRAGMA table_info({table_name})")
+            columns = [row[1] for row in cursor.fetchall()]
+
+            if "_schema_version" not in columns:
+                continue
+
+            # Query version distribution for this table
+            # Exclude tombstoned records (where _tombstoned = 1)
+            cursor.execute(
+                f"""
+                SELECT _schema_version, COUNT(*) as count
+                FROM {table_name}
+                WHERE _tombstoned = 0
+                GROUP BY _schema_version
+                ORDER BY _schema_version
+                """
+            )
+
+            distribution[table_name] = {}
+            for version, count in cursor.fetchall():
+                distribution[table_name][version] = count
+
+    finally:
+        conn.close()
+
+    return distribution
