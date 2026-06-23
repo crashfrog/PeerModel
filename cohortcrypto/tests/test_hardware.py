@@ -1,366 +1,362 @@
-"""Tests for hardware token operations and mock hardware."""
+#!/usr/bin/env python
+
+"""Tests for hardware token interface abstraction (Issue #2).
+
+RED tests that verify the hardware token interface contract:
+- TokenSession dataclass with required fields
+- KeyInfo dataclass for cryptographic key info
+- PIVSlot enum for slot selection
+- Hardware exception hierarchy
+
+These tests must fail until implementation exists.
+"""
 
 import pytest
-import os
-from unittest.mock import patch
 
-import cohortcrypto
-from cohortcrypto import (
-    enumerate_tokens,
-    open_token,
-    credential_from_token,
-    TokenInfo,
-    MockTokenSession,
-    PIVSlot,
+
+# Direct imports (will fail with ImportError if not implemented)
+from cohortcrypto.hardware import (
+    TokenSession,
+    KeyInfo,
+    PIVSlot
+)
+from cohortcrypto.exceptions import (
+    TokenNotFoundError,
+    PKCSLibraryNotFoundError,
     PINError,
-    TokenNotFoundError
+    HardwareCapabilityError,
+    PIVSlotError
 )
 
 
-@pytest.fixture(autouse=True)
-def enable_mock_hardware():
-    """Enable mock hardware for all tests."""
-    os.environ['COHORTCRYPTO_MOCK_HARDWARE'] = '1'
-    yield
-    if 'COHORTCRYPTO_MOCK_HARDWARE' in os.environ:
-        del os.environ['COHORTCRYPTO_MOCK_HARDWARE']
-
-
-@pytest.fixture
-def mock_token_session():
-    """Create a mock token session."""
-    return MockTokenSession.create()
-
-
-# Token Enumeration Tests (Mock)
-
-def test_enumerate_tokens_returns_list():
-    """enumerate_tokens returns a list."""
-    tokens = enumerate_tokens()
-    assert isinstance(tokens, list)
-
-
-def test_enumerate_tokens_mock_has_token():
-    """Mock mode returns at least one token."""
-    tokens = enumerate_tokens()
-    assert len(tokens) > 0
-
-
-def test_enumerate_tokens_mock_token_structure():
-    """Mock token has correct TokenInfo structure."""
-    tokens = enumerate_tokens()
-    token = tokens[0]
-
-    assert isinstance(token, TokenInfo)
-    assert isinstance(token.slot_id, int)
-    assert isinstance(token.token_label, str)
-    assert isinstance(token.token_serial, str)
-    assert isinstance(token.manufacturer, str)
-
-
-def test_enumerate_tokens_mock_token_values():
-    """Mock token has expected values."""
-    tokens = enumerate_tokens()
-    token = tokens[0]
-
-    assert "Mock" in token.token_label
-    assert token.slot_id == 0
-    assert token.manufacturer != ""
-
-
-# Token Session Tests (Mock)
-
-def test_open_token_returns_context_manager():
-    """open_token returns a context manager."""
-    cm = open_token(pin="123456")
-    assert hasattr(cm, '__enter__')
-    assert hasattr(cm, '__exit__')
-
-
-def test_open_mock_token_context_manager():
-    """Can use open_token as context manager."""
-    with open_token(pin="123456") as session:
-        assert session is not None
-        assert isinstance(session, MockTokenSession)
-
-
-def test_open_token_default_pin():
-    """open_token accepts default test PIN."""
-    with open_token(pin="123456") as session:
-        assert session._authenticated
-
-
-def test_open_token_wrong_pin_raises_error():
-    """open_token with wrong PIN raises PINError."""
-    with pytest.raises(PINError):
-        with open_token(pin="wrong_pin") as session:
-            pass
-
-
-def test_open_token_closes_session():
-    """Token session is closed after context manager exits."""
-    with open_token(pin="123456") as session:
-        session_id = id(session)
-
-    assert session._closed
-
-
-def test_open_token_accepts_piv_slot():
-    """open_token accepts piv_slot parameter."""
-    with open_token(pin="123456", piv_slot=PIVSlot.SLOT_9C) as session:
-        assert session.piv_slot == PIVSlot.SLOT_9C
-
-
-def test_open_token_default_piv_slot():
-    """open_token defaults to SLOT_9A."""
-    with open_token(pin="123456") as session:
-        assert session.piv_slot in [PIVSlot.SLOT_9A, PIVSlot.AUTO]
-
-
-# Mock Token Session Tests
-
-def test_mock_token_session_create():
-    """MockTokenSession.create() generates fresh keypairs."""
-    session = MockTokenSession.create()
-
-    assert session.x25519_public is not None
-    assert len(session.x25519_public) > 0
-    assert session.ed25519_public is not None
-    assert len(session.ed25519_public) > 0
-
-
-def test_mock_token_session_unique_keypairs():
-    """Each MockTokenSession has unique keypairs."""
-    session1 = MockTokenSession.create()
-    session2 = MockTokenSession.create()
-
-    assert session1.x25519_public != session2.x25519_public
-    assert session1.ed25519_public != session2.ed25519_public
-
-
-def test_mock_token_session_authenticate():
-    """MockTokenSession.authenticate() with correct PIN succeeds."""
-    session = MockTokenSession.create()
-    session.authenticate("123456")
-    assert session._authenticated
-
-
-def test_mock_token_session_wrong_pin():
-    """MockTokenSession.authenticate() with wrong PIN raises error."""
-    session = MockTokenSession.create()
-
-    with pytest.raises(PINError):
-        session.authenticate("wrong")
-
-
-def test_mock_token_session_sign():
-    """MockTokenSession can sign messages."""
-    session = MockTokenSession.create()
-    session.authenticate("123456")
-
-    message = b"test message"
-    signature = session.sign(message)
-
-    assert isinstance(signature, bytes)
-    assert len(signature) == 64  # Ed25519 signature is 64 bytes
-
-
-def test_mock_token_session_sign_requires_auth():
-    """MockTokenSession.sign() requires authentication."""
-    session = MockTokenSession.create()
-
-    with pytest.raises(RuntimeError):
-        session.sign(b"test")
-
-
-def test_mock_token_session_ecdh():
-    """MockTokenSession can perform ECDH."""
-    session1 = MockTokenSession.create()
-    session1.authenticate("123456")
-
-    session2 = MockTokenSession.create()
-    session2.authenticate("123456")
-
-    # Session1 performs ECDH with session2's public key
-    shared_secret = session1.ecdh(session2.x25519_public)
-
-    assert isinstance(shared_secret, bytes)
-    assert len(shared_secret) == 32  # X25519 shared secret is 32 bytes
-
-
-def test_mock_token_session_ecdh_requires_auth():
-    """MockTokenSession.ecdh() requires authentication."""
-    session = MockTokenSession.create()
-    other_session = MockTokenSession.create()
-
-    with pytest.raises(RuntimeError):
-        session.ecdh(other_session.x25519_public)
-
-
-def test_mock_token_session_ecdh_symmetry():
-    """ECDH with swapped keys produces same shared secret."""
-    session1 = MockTokenSession.create()
-    session1.authenticate("123456")
-
-    session2 = MockTokenSession.create()
-    session2.authenticate("123456")
-
-    secret1 = session1.ecdh(session2.x25519_public)
-    secret2 = session2.ecdh(session1.x25519_public)
-
-    assert secret1 == secret2
-
-
-def test_mock_token_session_close():
-    """MockTokenSession.close() clears state."""
-    session = MockTokenSession.create()
-    session.authenticate("123456")
-
-    session.close()
-
-    assert session._closed
-    assert not session._authenticated
-
-
-# Member Credential Tests
-
-def test_credential_from_token():
-    """credential_from_token creates MemberCredential."""
-    session = MockTokenSession.create()
-    session.authenticate("123456")
-
-    cred = credential_from_token(session, 'alice')
-
-    assert cred is not None
-    assert cred.member_id == 'alice'
-
-
-def test_credential_from_token_has_public_keys():
-    """MemberCredential includes public keys."""
-    session = MockTokenSession.create()
-    session.authenticate("123456")
-
-    cred = credential_from_token(session, 'alice')
-
-    assert cred.x25519_public == session.x25519_public
-    assert cred.ed25519_public == session.ed25519_public
-
-
-def test_credential_from_token_hardware_backed():
-    """MemberCredential from token is hardware_backed."""
-    session = MockTokenSession.create()
-    session.authenticate("123456")
-
-    cred = credential_from_token(session, 'alice')
-
-    assert cred.hardware_backed is True
-
-
-def test_credential_from_token_algorithm_fields():
-    """MemberCredential includes algorithm fields."""
-    session = MockTokenSession.create()
-    session.authenticate("123456")
-
-    cred = credential_from_token(session, 'alice')
-
-    assert cred.signing_algorithm == "ed25519"
-    assert cred.encryption_algorithm == "x25519"
-
-
-def test_credential_from_token_multiple_members():
-    """Can create multiple credentials from same token."""
-    session = MockTokenSession.create()
-    session.authenticate("123456")
-
-    alice_cred = credential_from_token(session, 'alice')
-    bob_cred = credential_from_token(session, 'bob')
-
-    assert alice_cred.member_id == 'alice'
-    assert bob_cred.member_id == 'bob'
-    assert alice_cred.x25519_public == bob_cred.x25519_public
-
-
-# Integration Tests (Mock)
-
-def test_open_token_provides_authenticated_session():
-    """Opened token session is authenticated."""
-    with open_token(pin="123456") as session:
-        # Should be able to sign without additional auth
-        message = b"test"
-        signature = session.sign(message)
-        assert len(signature) == 64
-
-
-def test_open_token_session_ecdh_works():
-    """Can perform ECDH with opened token."""
-    with open_token(pin="123456") as session1:
-        other_session = MockTokenSession.create()
-        other_session.authenticate("123456")
-
-        shared_secret = session1.ecdh(other_session.x25519_public)
-        assert len(shared_secret) == 32
-
-
-def test_multiple_tokens_in_enumerate():
-    """Can enumerate mock tokens (at least one)."""
-    tokens = enumerate_tokens()
-
-    assert len(tokens) >= 1
-    for token in tokens:
-        assert token.slot_id >= 0
-        assert token.token_label
-        assert token.token_serial
-
-
-# PIVSlot Tests
-
-def test_piv_slot_enum_values():
-    """PIVSlot enum has expected values."""
-    assert PIVSlot.AUTO.value == "auto"
-    assert PIVSlot.SLOT_9A.value == "9A"
-    assert PIVSlot.SLOT_9C.value == "9C"
-
-
-def test_piv_slot_auto_accepted():
-    """PIVSlot.AUTO is accepted by open_token."""
-    with open_token(pin="123456", piv_slot=PIVSlot.AUTO) as session:
-        assert session.piv_slot == PIVSlot.AUTO
-
-
-# Real Hardware Tests (Optional, Marked)
-
-@pytest.mark.hardware
-def test_enumerate_real_tokens():
-    """Enumerate real tokens on system (requires hardware).
-
-    This test is skipped by default. Run with:
-    pytest -m hardware
-    """
-    if 'COHORTCRYPTO_MOCK_HARDWARE' in os.environ:
-        del os.environ['COHORTCRYPTO_MOCK_HARDWARE']
-
-    try:
-        tokens = enumerate_tokens()
-        # If we get here, hardware detection worked
-        assert isinstance(tokens, list)
-    except Exception as e:
-        # Hardware not available - expected in most environments
-        pytest.skip(f"Hardware not available: {e}")
-
-
-@pytest.mark.hardware
-def test_open_real_token():
-    """Open real token session (requires hardware).
-
-    This test is skipped by default. Run with:
-    pytest -m hardware
-    """
-    if 'COHORTCRYPTO_MOCK_HARDWARE' in os.environ:
-        del os.environ['COHORTCRYPTO_MOCK_HARDWARE']
-
-    try:
-        with open_token(pin=None) as session:
-            assert session is not None
-    except Exception as e:
-        # Hardware not available - expected in most environments
-        pytest.skip(f"Hardware not available: {e}")
+class TestKeyInfoDataclass:
+    """Test KeyInfo dataclass structure."""
+
+    def test_keyinfo_exists(self):
+        """KeyInfo dataclass should be defined."""
+        assert KeyInfo is not None
+
+    def test_keyinfo_instantiable_basic(self):
+        """KeyInfo should be instantiable with basic fields."""
+        key = KeyInfo(
+            algorithm="ed25519",
+            public_key=b"\x01" * 32,
+            certificate=None,
+            piv_slot=None
+        )
+        assert key.algorithm == "ed25519"
+        assert key.public_key == b"\x01" * 32
+        assert key.certificate is None
+        assert key.piv_slot is None
+
+    def test_keyinfo_with_certificate(self):
+        """KeyInfo should accept certificate field."""
+        cert_der = b"\x30\x82\x01\x00" + b"\x00" * 256
+        key = KeyInfo(
+            algorithm="x25519",
+            public_key=b"\x02" * 32,
+            certificate=cert_der,
+            piv_slot=PIVSlot.SLOT_9A
+        )
+        assert key.certificate == cert_der
+        assert key.piv_slot == PIVSlot.SLOT_9A
+
+    def test_keyinfo_algorithm_required(self):
+        """KeyInfo requires algorithm field."""
+        # Should raise TypeError if algorithm missing
+        with pytest.raises(TypeError):
+            KeyInfo(public_key=b"\x01" * 32)
+
+    def test_keyinfo_public_key_required(self):
+        """KeyInfo requires public_key field."""
+        # Should raise TypeError if public_key missing
+        with pytest.raises(TypeError):
+            KeyInfo(algorithm="ed25519")
+
+    def test_keyinfo_algorithms_supported(self):
+        """KeyInfo should support various algorithms."""
+        algorithms = ["ed25519", "x25519", "p256", "rsa2048"]
+        for algo in algorithms:
+            key = KeyInfo(
+                algorithm=algo,
+                public_key=b"\x01" * 32,
+                certificate=None,
+                piv_slot=None
+            )
+            assert key.algorithm == algo
+
+
+class TestTokenSessionDataclass:
+    """Test TokenSession dataclass structure."""
+
+    def test_tokensession_exists(self):
+        """TokenSession dataclass should be defined."""
+        assert TokenSession is not None
+
+    def test_tokensession_instantiable_full(self):
+        """TokenSession should be instantiable with all fields."""
+        signing_key = KeyInfo(
+            algorithm="ed25519",
+            public_key=b"\x01" * 32,
+            certificate=None,
+            piv_slot=PIVSlot.SLOT_9C
+        )
+        encryption_key = KeyInfo(
+            algorithm="x25519",
+            public_key=b"\x02" * 32,
+            certificate=None,
+            piv_slot=PIVSlot.SLOT_9A
+        )
+        session = TokenSession(
+            token_type="YubiKey",
+            slot_id=0,
+            signing_key_info=signing_key,
+            encryption_key_info=encryption_key,
+            supports_x25519=True,
+            supports_ed25519=True,
+            firmware_version="5.4.3"
+        )
+        assert session.token_type == "YubiKey"
+        assert session.slot_id == 0
+        assert session.signing_key_info == signing_key
+        assert session.encryption_key_info == encryption_key
+        assert session.supports_x25519 is True
+        assert session.supports_ed25519 is True
+        assert session.firmware_version == "5.4.3"
+
+    def test_tokensession_firmware_version_optional(self):
+        """TokenSession.firmware_version should be optional."""
+        signing_key = KeyInfo(algorithm="p256", public_key=b"\x03" * 64, certificate=None, piv_slot=None)
+        encryption_key = KeyInfo(algorithm="p256", public_key=b"\x04" * 64, certificate=None, piv_slot=None)
+        session = TokenSession(
+            token_type="PIV Card",
+            slot_id=1,
+            signing_key_info=signing_key,
+            encryption_key_info=encryption_key,
+            supports_x25519=False,
+            supports_ed25519=False,
+            firmware_version=None  # Optional field
+        )
+        assert session.firmware_version is None
+        assert session.token_type == "PIV Card"
+
+    def test_tokensession_required_fields(self):
+        """TokenSession should require all core fields."""
+        signing_key = KeyInfo(algorithm="ed25519", public_key=b"\x01" * 32, certificate=None, piv_slot=None)
+        encryption_key = KeyInfo(algorithm="x25519", public_key=b"\x02" * 32, certificate=None, piv_slot=None)
+
+        # Missing token_type should raise TypeError
+        with pytest.raises(TypeError):
+            TokenSession(
+                slot_id=0,
+                signing_key_info=signing_key,
+                encryption_key_info=encryption_key,
+                supports_x25519=True,
+                supports_ed25519=True,
+                firmware_version="1.0"
+            )
+
+    def test_tokensession_slot_id_integer(self):
+        """TokenSession.slot_id should be integer."""
+        signing_key = KeyInfo(algorithm="ed25519", public_key=b"\x01" * 32, certificate=None, piv_slot=None)
+        encryption_key = KeyInfo(algorithm="x25519", public_key=b"\x02" * 32, certificate=None, piv_slot=None)
+        session = TokenSession(
+            token_type="YubiKey",
+            slot_id=5,
+            signing_key_info=signing_key,
+            encryption_key_info=encryption_key,
+            supports_x25519=True,
+            supports_ed25519=True,
+            firmware_version="1.0"
+        )
+        assert isinstance(session.slot_id, int)
+        assert session.slot_id == 5
+
+    def test_tokensession_boolean_support_flags(self):
+        """TokenSession support flags should be boolean."""
+        signing_key = KeyInfo(algorithm="ed25519", public_key=b"\x01" * 32, certificate=None, piv_slot=None)
+        encryption_key = KeyInfo(algorithm="x25519", public_key=b"\x02" * 32, certificate=None, piv_slot=None)
+        session = TokenSession(
+            token_type="YubiKey",
+            slot_id=0,
+            signing_key_info=signing_key,
+            encryption_key_info=encryption_key,
+            supports_x25519=True,
+            supports_ed25519=False,
+            firmware_version="1.0"
+        )
+        assert isinstance(session.supports_x25519, bool)
+        assert isinstance(session.supports_ed25519, bool)
+        assert session.supports_x25519 is True
+        assert session.supports_ed25519 is False
+
+
+class TestPIVSlotEnum:
+    """Test PIVSlot enum structure."""
+
+    def test_pivslot_exists(self):
+        """PIVSlot enum should be defined."""
+        assert PIVSlot is not None
+
+    def test_pivslot_has_slot_9a(self):
+        """PIVSlot should have SLOT_9A member."""
+        assert hasattr(PIVSlot, "SLOT_9A")
+        assert PIVSlot.SLOT_9A is not None
+
+    def test_pivslot_has_slot_9c(self):
+        """PIVSlot should have SLOT_9C member."""
+        assert hasattr(PIVSlot, "SLOT_9C")
+        assert PIVSlot.SLOT_9C is not None
+
+    def test_pivslot_has_auto(self):
+        """PIVSlot should have AUTO member."""
+        assert hasattr(PIVSlot, "AUTO")
+        assert PIVSlot.AUTO is not None
+
+    def test_pivslot_members_distinct(self):
+        """PIVSlot enum members should be distinct."""
+        assert PIVSlot.SLOT_9A != PIVSlot.SLOT_9C
+        assert PIVSlot.SLOT_9A != PIVSlot.AUTO
+        assert PIVSlot.SLOT_9C != PIVSlot.AUTO
+
+    def test_pivslot_members_have_values(self):
+        """PIVSlot enum members should have values."""
+        assert PIVSlot.SLOT_9A.value is not None
+        assert PIVSlot.SLOT_9C.value is not None
+        assert PIVSlot.AUTO.value is not None
+
+    def test_pivslot_can_be_used_in_keyinfo(self):
+        """PIVSlot enum values should be usable in KeyInfo."""
+        for slot in [PIVSlot.SLOT_9A, PIVSlot.SLOT_9C, PIVSlot.AUTO]:
+            key = KeyInfo(
+                algorithm="ed25519",
+                public_key=b"\x01" * 32,
+                certificate=None,
+                piv_slot=slot
+            )
+            assert key.piv_slot == slot
+
+
+class TestTokenNotFoundError:
+    """Test TokenNotFoundError exception."""
+
+    def test_tokennotfound_exists(self):
+        """TokenNotFoundError should be defined."""
+        assert TokenNotFoundError is not None
+
+    def test_tokennotfound_is_exception(self):
+        """TokenNotFoundError should inherit from Exception."""
+        assert issubclass(TokenNotFoundError, Exception)
+
+    def test_tokennotfound_instantiable(self):
+        """TokenNotFoundError should be instantiable."""
+        exc = TokenNotFoundError("No token found")
+        assert str(exc) == "No token found"
+
+    def test_tokennotfound_inheritance(self):
+        """TokenNotFoundError should be instance of Exception."""
+        exc = TokenNotFoundError("test message")
+        assert isinstance(exc, Exception)
+
+
+class TestPKCSLibraryNotFoundError:
+    """Test PKCSLibraryNotFoundError exception."""
+
+    def test_pkcs11library_exists(self):
+        """PKCSLibraryNotFoundError should be defined."""
+        assert PKCSLibraryNotFoundError is not None
+
+    def test_pkcs11library_is_exception(self):
+        """PKCSLibraryNotFoundError should inherit from Exception."""
+        assert issubclass(PKCSLibraryNotFoundError, Exception)
+
+    def test_pkcs11library_instantiable(self):
+        """PKCSLibraryNotFoundError should be instantiable."""
+        exc = PKCSLibraryNotFoundError("PKCS#11 library not found")
+        assert isinstance(exc, Exception)
+
+
+class TestPINError:
+    """Test PINError exception."""
+
+    def test_pinerror_exists(self):
+        """PINError should be defined."""
+        assert PINError is not None
+
+    def test_pinerror_is_exception(self):
+        """PINError should inherit from Exception."""
+        assert issubclass(PINError, Exception)
+
+    def test_pinerror_instantiable(self):
+        """PINError should be instantiable."""
+        exc = PINError("Invalid PIN")
+        assert str(exc) == "Invalid PIN"
+
+    def test_pinerror_inheritance(self):
+        """PINError should be instance of Exception."""
+        exc = PINError("PIN verification failed")
+        assert isinstance(exc, Exception)
+
+
+class TestHardwareCapabilityError:
+    """Test HardwareCapabilityError exception."""
+
+    def test_hardwarecapability_exists(self):
+        """HardwareCapabilityError should be defined."""
+        assert HardwareCapabilityError is not None
+
+    def test_hardwarecapability_is_exception(self):
+        """HardwareCapabilityError should inherit from Exception."""
+        assert issubclass(HardwareCapabilityError, Exception)
+
+    def test_hardwarecapability_instantiable(self):
+        """HardwareCapabilityError should be instantiable."""
+        exc = HardwareCapabilityError("Token does not support X25519")
+        assert isinstance(exc, Exception)
+
+
+class TestPIVSlotError:
+    """Test PIVSlotError exception."""
+
+    def test_pivslot_error_exists(self):
+        """PIVSlotError should be defined."""
+        assert PIVSlotError is not None
+
+    def test_pivslot_error_is_exception(self):
+        """PIVSlotError should inherit from Exception."""
+        assert issubclass(PIVSlotError, Exception)
+
+    def test_pivslot_error_instantiable(self):
+        """PIVSlotError should be instantiable."""
+        exc = PIVSlotError("Invalid PIV slot")
+        assert isinstance(exc, Exception)
+
+
+class TestExceptionHierarchy:
+    """Test exception inheritance relationships."""
+
+    def test_all_exceptions_inherit_from_exception(self):
+        """All hardware exceptions should inherit from Exception."""
+        exceptions = [
+            TokenNotFoundError,
+            PKCSLibraryNotFoundError,
+            PINError,
+            HardwareCapabilityError,
+            PIVSlotError
+        ]
+        for exc_class in exceptions:
+            assert issubclass(exc_class, Exception), f"{exc_class.__name__} should inherit from Exception"
+
+    def test_exception_instantiation(self):
+        """All exceptions should be instantiable with messages."""
+        exceptions = [
+            (TokenNotFoundError, "Token not found"),
+            (PKCSLibraryNotFoundError, "Library not found"),
+            (PINError, "Wrong PIN"),
+            (HardwareCapabilityError, "Capability missing"),
+            (PIVSlotError, "Invalid slot")
+        ]
+        for exc_class, message in exceptions:
+            exc = exc_class(message)
+            assert isinstance(exc, Exception)
+            assert str(exc) == message

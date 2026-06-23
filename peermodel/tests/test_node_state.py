@@ -10,8 +10,8 @@ from pathlib import Path
 # These imports will fail until the feature is implemented (RED tests)
 try:
     from peermodel.state import NodeState, get_node_state, set_node_state
-except ImportError:
-    pytest.skip("NodeState not yet implemented", allow_module_level=True)
+except ImportError as e:
+    pytest.fail(f"NodeState module not implemented: {e}", pytrace=False)
 
 
 @pytest.fixture
