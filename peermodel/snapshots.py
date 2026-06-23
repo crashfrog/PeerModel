@@ -22,6 +22,10 @@ __all__ = [
     'Snapshot',
     'SnapshotManager',
     'canonical_snapshot_bytes',
+    'serialize_snapshot_to_cbor',
+    'deserialize_snapshot_from_cbor',
+    'publish_snapshot',
+    'update_ipns_pointer',
 ]
 
 
@@ -95,6 +99,54 @@ def canonical_snapshot_bytes(snapshot: Snapshot) -> bytes:
     output = io.BytesIO()
     cbor2.dump(snapshot_dict, output, canonical=True)
     return output.getvalue()
+
+
+def serialize_snapshot_to_cbor(snapshot: Snapshot) -> bytes:
+    """Serialize a Snapshot to CBOR bytes, including the signature field."""
+    snapshot_dict = {
+        "cohort_id": snapshot.cohort_id,
+        "snapshot_id": snapshot.snapshot_id,
+        "record_type": snapshot.record_type,
+        "log_head_cid": snapshot.log_head_cid,
+        "sequence_number": snapshot.sequence_number,
+        "records": snapshot.records,
+        "created_at": snapshot.created_at,
+        "signature": snapshot.signature,
+        "signing_algorithm": snapshot.signing_algorithm,
+    }
+    output = io.BytesIO()
+    cbor2.dump(snapshot_dict, output, canonical=True)
+    return output.getvalue()
+
+
+def deserialize_snapshot_from_cbor(cbor_bytes: bytes) -> Snapshot:
+    """Deserialize a Snapshot from CBOR bytes."""
+    data = cbor2.loads(cbor_bytes)
+    return Snapshot(
+        cohort_id=data["cohort_id"],
+        snapshot_id=data["snapshot_id"],
+        record_type=data["record_type"],
+        log_head_cid=data["log_head_cid"],
+        sequence_number=data["sequence_number"],
+        records=data["records"],
+        created_at=data["created_at"],
+        signature=data["signature"],
+        signing_algorithm=data["signing_algorithm"],
+    )
+
+
+def publish_snapshot(snapshot: Snapshot, ipfs_client) -> str:
+    """Serialize snapshot to CBOR and publish to IPFS. Returns CID string."""
+    cbor_bytes = serialize_snapshot_to_cbor(snapshot)
+    result = ipfs_client.add(cbor_bytes)
+    return result["Hash"]
+
+
+def update_ipns_pointer(cohort_id: str, record_type: str, cid: str, ipfs_client) -> str:
+    """Publish snapshot CID to IPNS under canonical key name. Returns key name."""
+    key_name = f"peermodel:{cohort_id}:{record_type}:snapshot"
+    ipfs_client.name.publish(f"/ipfs/{cid}", key=key_name)
+    return key_name
 
 
 class SnapshotManager:
