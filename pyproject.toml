@@ -62,4 +62,6 @@ markers = [
     "issue_21: marks tests for IndexDB.query() interface (issue #21)",
     "issue_22: marks tests for snapshot structure & creation (issue #22)",
     "issue_11: marks tests for member enrollment via key encryption (issue #11)",
+    "issue_26: marks tests for incremental sync (issue #26)",
+    "issue_27: marks tests for cold start (snapshot + delta rebuild) (issue #27)",
 ]

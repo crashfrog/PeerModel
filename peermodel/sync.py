@@ -40,6 +40,22 @@ class SyncResult:
     record_type: str
 
 
+@dataclass
+class ColdStartResult:
+    """Result of a cold start operation.
+
+    Attributes:
+        ops_applied: Number of delta operations applied (snapshot records excluded)
+        new_head_cid: CID of the head after cold start
+        record_type: Record type that was rebuilt
+        snapshot_applied: True if a snapshot was loaded; False for genesis rebuild
+    """
+    ops_applied: int
+    new_head_cid: str
+    record_type: str
+    snapshot_applied: bool
+
+
 class SyncManager:
     """Manages incremental sync of operation logs.
 
@@ -204,4 +220,70 @@ class SyncManager:
             ops_applied=len(new_ops),
             new_head_cid=current_head_cid,
             record_type=record_type
+        )
+
+    async def cold_start(
+        self,
+        record_type: str,
+        current_head_cid: str,
+        snapshot=None,
+    ) -> ColdStartResult:
+        """Rebuild the index from a snapshot plus any subsequent delta ops.
+
+        Loads the latest snapshot (if provided), applies it to the index,
+        then traverses and applies all operations between the snapshot head
+        and the current head. Updates NodeState to 'current' when done.
+
+        Args:
+            record_type: Type of record to rebuild
+            current_head_cid: Current head CID of the operation log
+            snapshot: Optional Snapshot to seed the index; None triggers full
+                      traversal from genesis
+
+        Returns:
+            ColdStartResult with ops_applied, new_head_cid, record_type,
+            and snapshot_applied flag
+        """
+        if snapshot is not None:
+            self.index_db.apply_snapshot(snapshot)
+            stop_at_cid = snapshot.log_head_cid
+            snapshot_applied = True
+            snapshot_cid = snapshot.snapshot_id
+            snapshot_sequence = snapshot.sequence_number
+        else:
+            stop_at_cid = None
+            snapshot_applied = False
+            snapshot_cid = None
+            snapshot_sequence = 0
+
+        delta_ops = await traverse(
+            head_cid=current_head_cid,
+            stop_at_cid=stop_at_cid,
+            ipfs_client=self.ipfs_client,
+        )
+
+        for op in delta_ops:
+            self.index_db.apply_operation(op)
+
+        last_synced_sequence = (
+            delta_ops[-1].sequence_number if delta_ops else snapshot_sequence
+        )
+
+        updated_state = NodeState(
+            cohort_id=self.cohort_identity.cohort_id,
+            record_type=record_type,
+            last_synced_head_cid=current_head_cid,
+            last_synced_sequence=last_synced_sequence,
+            snapshot_cid=snapshot_cid,
+            snapshot_sequence=snapshot_sequence,
+            index_status='current',
+            last_sync_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        )
+        self.index_db.set_node_state(updated_state)
+
+        return ColdStartResult(
+            ops_applied=len(delta_ops),
+            new_head_cid=current_head_cid,
+            record_type=record_type,
+            snapshot_applied=snapshot_applied,
         )
